@@ -62,12 +62,16 @@
                                                  (cf-get-struct-value full-page "title")
                                                  (cf-get-struct-value full-page "space"))))
     (set-buffer page-buffer)
-    (delete-region (point-min) (point-max))
+    (erase-buffer)
+    (kill-all-local-variables)
     (insert (cf-get-struct-value full-page "content"))
     (cf-set-struct-value full-page "content" nil)
     (setq confluence-page-struct full-page)
     (set-buffer-modified-p nil)
     (goto-char (point-min))
+    (or (eq buffer-undo-list t)
+        (setq buffer-undo-list nil))
+    (confluence-mode)
     (switch-to-buffer page-buffer)
     ))
 
@@ -124,6 +128,12 @@
 	(buffer-string))
     string))
 
+;; FIXME, add support for reverting buffer (revert-buffer-function)
+
+(define-derived-mode confluence-mode text-mode "Confluence"
+  "Set major mode for editing Confluence Wiki pages."
+  (turn-off-auto-fill)
+)
 
 (provide 'confluence2)
 ;;; confluence2.el ends here

@@ -26,11 +26,10 @@
 
 ;;; Code:
 
-(add-to-list 'load-path (expand-file-name "~/src/confluence-el"))
 (require 'xml-rpc)
 
-(defvar confluence-url "http://doc.boomi.com/confluence/rpc/xmlrpc")
-(defvar confluence-space "BOOMI20")
+(defvar confluence-url nil)
+(defvar confluence-space nill)
 (defvar confluence-login-token nil)
 (defvar confluence-page-struct nil)
 (make-variable-buffer-local 'confluence-page-struct)

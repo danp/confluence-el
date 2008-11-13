@@ -25,10 +25,6 @@
        ((not ,condition) #t)
      ,@body))
 
-;(define *confluence-xml-rpc-url* "https://intranet.hmsonline.com/confluence/rpc/xmlrpc")
-;(define (set-confluence-xml-rpc-url url)
-;  (set! *confluence-xml-rpc-url* url))
-
 (define *xml-rpc-config* 
   (let ((cfg (XmlRpcClientConfigImpl.)))
     (.setServerURL cfg (URL. *confluence-xml-rpc-url*))

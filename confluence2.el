@@ -58,9 +58,9 @@
                                        (cf-get-space-name page-path)
                                        (cf-get-page-name page-path)))
         (page-buffer))
-    (setq page-buffer (get-buffer-create (format "<%s>%s"
-                                                 (cf-get-struct-value full-page "space")
-                                                 (cf-get-struct-value full-page "title"))))
+    (setq page-buffer (get-buffer-create (format "%s<%s>"
+                                                 (cf-get-struct-value full-page "title")
+                                                 (cf-get-struct-value full-page "space"))))
     (set-buffer page-buffer)
     (delete-region (point-min) (point-max))
     (insert (cf-get-struct-value full-page "content"))

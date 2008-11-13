@@ -29,7 +29,7 @@
 (require 'xml-rpc)
 
 (defvar confluence-url nil)
-(defvar confluence-space nill)
+(defvar confluence-default-space nil)
 (defvar confluence-login-token nil)
 (defvar confluence-page-struct nil)
 (make-variable-buffer-local 'confluence-page-struct)
@@ -52,9 +52,11 @@
                                          (read-passwd "Password: ")))
         ))
 
-(defun confluence-get-page (page-name)
-  (interactive "MPageName: ")
-  (let ((full-page (confluence-execute 'confluence1.getPage confluence-space page-name))
+(defun confluence-get-page (page-path)
+  (interactive "MPageSpace/PageName: ")
+  (let ((full-page (confluence-execute 'confluence1.getPage
+                                       (cf-get-space-name page-path)
+                                       (cf-get-page-name page-path)))
         (page-buffer))
     (setq page-buffer (get-buffer-create (format "<%s>%s"
                                                  (cf-get-struct-value full-page "space")
@@ -69,7 +71,17 @@
     (switch-to-buffer page-buffer)
     ))
 
+(defun cf-get-space-name (page-path)
+  (let ((page-paths (split-string page-path "/")))
+    (if (> (length page-paths) 1)
+        (car page-paths)
+      confluence-default-space)))
 
+(defun cf-get-page-name (page-path)
+  (let ((page-paths (split-string page-path "/")))
+    (if (> (length page-paths) 1)
+        (cadr page-paths)
+      page-path)))
 
 (defun cf-get-struct-value (struct key)
   (cdr (assoc key struct)))
@@ -102,12 +114,12 @@
 	(goto-char (point-min))
         (while (re-search-forward "&[^;]+;" nil t)
           (replace-match (cdr-safe (assoc (match-string 0)
-                                '(("&quot;" . ?\")
-			       ("&amp;" . ?&)
-			       ("&lt;" . ?<)
-			       ("&gt;" . ?>)
-                               ;; FIXME, this should handle any hex code
-                               ("&#32;" . " "))))
+                                          '(("&quot;" . ?\")
+                                            ("&amp;" . ?&)
+                                            ("&lt;" . ?<)
+                                            ("&gt;" . ?>)
+                                            ;; FIXME, this should handle any hex code
+                                            ("&#32;" . " "))))
                          t t))
 	(buffer-string))
     string))

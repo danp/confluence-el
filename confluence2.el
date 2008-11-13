@@ -128,11 +128,45 @@
 	(buffer-string))
     string))
 
+
+(defconst confluence-keywords
+  (list
+  
+   '("{\\([^}]+\\)}"
+     (1 font-lock-constant-face prepend))
+  
+   '("{warning}\\(.*?\\){warning}"
+     (1 font-lock-warning-face prepend))
+  
+   ;; bold
+   '("[*]\\([^*]+\\)[*]"
+     (1 (quote bold) prepend t))
+   
+   ;; code
+   '("{{\\([^*]+\\)}}"
+     (1 doxygen-code-face prepend t))
+   
+   ;; italics/emphasised
+   '("_\\([^_]+\\)_"
+     (1 (quote italic) prepend t))
+
+   ;; underline
+   '("[+]\\([^+]+\\)[+]"
+     (1 (quote underline) prepend t))
+
+   ;; headings
+   '("^h[1-9][.] \\(.*\\)$"
+     (1 (quote bold) prepend t))
+   )
+  )
+
 ;; FIXME, add support for reverting buffer (revert-buffer-function)
 
 (define-derived-mode confluence-mode text-mode "Confluence"
   "Set major mode for editing Confluence Wiki pages."
   (turn-off-auto-fill)
+  (setq font-lock-defaults
+        '(confluence-keywords nil nil nil nil))
 )
 
 (provide 'confluence2)

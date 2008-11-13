@@ -157,7 +157,14 @@
    ;; headings
    '("^h[1-9][.] \\(.*\\)$"
      (1 (quote bold) prepend t))
+
+  ;; links
+   '("\\[\\(\\([^|]*\\)[|]\\)?\\([^]]+\\)\\]"
+     (2 font-lock-string-face prepend t t)
+     (3 (quote underline) prepend t)
+     )
    )
+  
   )
 
 ;; FIXME, add support for reverting buffer (revert-buffer-function)

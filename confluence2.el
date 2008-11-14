@@ -37,6 +37,7 @@
 
 (defvar confluence-page-struct nil)
 (make-variable-buffer-local 'confluence-page-struct)
+(put 'confluence-page-struct 'permanent-local t)
 
 (defvar confluence-page-id nil)
 (make-variable-buffer-local 'confluence-page-id)
@@ -99,7 +100,8 @@
   (cf-set-struct-value confluence-page-struct "content"
                        (buffer-string))
   (cf-insert-page (confluence-execute 'confluence1.storePage
-                                      confluence-page-struct)))
+                                      confluence-page-struct) t)
+  t)
 
 (defun cf-revert-page (&optional arg noconfirm)
   (if (and confluence-page-id
@@ -112,25 +114,28 @@
         (goto-char old-point))))
 
 (defun cf-show-page (full-page)
-  (let ((page-buffer (get-buffer-create 
-                       (format "%s<%s>"
+  (let* ((page-buf-name (format "%s<%s>"
                                (cf-get-struct-value full-page "title")
-                               (cf-get-struct-value full-page "space")))))
-    (set-buffer page-buffer)
-    (cf-insert-page full-page)
-    (goto-char (point-min))
+                               (cf-get-struct-value full-page "space")))
+         (page-buffer (get-buffer page-buf-name)))
+    (if (not page-buffer)
+        (progn
+          (setq page-buffer (get-buffer-create page-buf-name))
+          (set-buffer page-buffer)
+          (cf-insert-page full-page)
+          (goto-char (point-min))))
     (switch-to-buffer page-buffer)))
 
-(defun cf-insert-page (full-page)
+(defun cf-insert-page (full-page &optional keep-undo)
   (widen)
-  (kill-all-local-variables)
   (erase-buffer)
   (setq confluence-page-id (cf-get-struct-value full-page "id"))
   (insert (cf-get-struct-value full-page "content"))
-  (cf-set-struct-value full-page "content" nil)
+  (cf-set-struct-value full-page "content" "")
   (setq confluence-page-struct full-page)
   (set-buffer-modified-p nil)
-  (or (eq buffer-undo-list t)
+  (or keep-undo
+      (eq buffer-undo-list t)
       (setq buffer-undo-list nil))
   (confluence-mode))
 
@@ -179,22 +184,33 @@
     &quot; ==>  \"
     &#32   ==>  ' '"
   (if (and (stringp string)
-           (string-match "[&]" string))
+           (string-match "[&\r]" string))
       (save-excursion
-	(set-buffer (get-buffer-create " *entity*"))
+	(set-buffer (get-buffer-create " *Confluence-decode*"))
 	(erase-buffer)
 	(buffer-disable-undo (current-buffer))
 	(insert string)
 	(goto-char (point-min))
-        (while (re-search-forward "&[^;]+;" nil t)
-          (replace-match (cdr-safe (assoc (match-string 0)
-                                          '(("&quot;" . ?\")
-                                            ("&amp;" . ?&)
-                                            ("&lt;" . ?<)
-                                            ("&gt;" . ?>)
-                                            ;; FIXME, this should handle any hex code
-                                            ("&#32;" . " "))))
-                         t t))
+        (while (re-search-forward "&\\([^;]+\\);" nil t)
+          (let ((ent-str (match-string 1)))
+            (replace-match (cond
+                            ((cdr-safe (assoc ent-str
+                                              '(("quot" . ?\")
+                                                ("amp" . ?&)
+                                                ("lt" . ?<)
+                                                ("gt" . ?>)))))
+                            ((save-match-data
+                               (and (string-match "^#\\([0-9]+\\)$" ent-str)
+                                    (string (string-to-number (match-string 1 ent-str))))))
+                            ((save-match-data
+                               (and (string-match "^#x\\([0-9A-Fa-f]+\\)$" ent-str)
+                                    (string (string-to-number (match-string 1 ent-str) 16)))))
+                            (t ent-str))
+                           t t)))
+
+	(goto-char (point-min))
+        (while (re-search-forward "\r\n" nil t)
+          (replace-match "\n" t t))
 	(buffer-string))
     string))
 
@@ -242,9 +258,12 @@
   (turn-off-auto-fill)
   (make-local-variable 'revert-buffer-function)
   (setq revert-buffer-function 'cf-revert-page)
+  (make-local-variable 'make-backup-files)
+  (setq make-backup-files nil)
   (setq font-lock-defaults
         '(confluence-keywords nil nil nil nil))
   (add-hook 'write-contents-hooks 'cf-save-page)
+  (setq buffer-file-name (expand-file-name (buffer-name) "~/"))
 )
 
 (provide 'confluence2)

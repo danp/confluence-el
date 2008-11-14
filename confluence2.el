@@ -3,7 +3,7 @@
 ;; Copyright (C) 2008  Free Software Foundation, Inc.
 
 ;; Author: James Ahlborn <jahlborn@boomi.com>
-;; Keywords: convenience
+;; Keywords: confluence, wiki, jscheme, xmlrpc
 
 ;; This file is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -30,9 +30,17 @@
 
 (defvar confluence-url nil)
 (defvar confluence-default-space nil)
+
 (defvar confluence-login-token nil)
+(defvar confluence-space-history nil)
+(defvar confluence-page-history nil)
+
 (defvar confluence-page-struct nil)
 (make-variable-buffer-local 'confluence-page-struct)
+
+(defvar confluence-page-id nil)
+(make-variable-buffer-local 'confluence-page-id)
+(put 'confluence-page-id 'permanent-local t)
 
 (defun confluence-execute (method-name &rest params)
   (confluence-login)
@@ -43,37 +51,98 @@
         (url-http-attempt-keepalives nil))
     (url-decode-entities-in-value (apply 'xml-rpc-method-call confluence-url method-name params))))
 
-(defun confluence-login ()
-  (interactive)
-  (if (not confluence-login-token)
+(defun confluence-login (&optional arg)
+  (interactive "P")
+  (if (or (not confluence-login-token)
+          arg)
       (setq confluence-login-token
-            (confluence-execute-internal 'confluence1.login
-                                         (read-string "Username: " user-login-name)
-                                         (read-passwd "Password: ")))
+            (confluence-execute-internal 
+             'confluence1.login
+             (read-string "Username: " user-login-name)
+             (read-passwd "Password: ")))
         ))
 
-(defun confluence-get-page (page-path)
+(defun confluence-get-page-by-path (page-path)
   (interactive "MPageSpace/PageName: ")
-  (let ((full-page (confluence-execute 'confluence1.getPage
-                                       (cf-get-space-name page-path)
-                                       (cf-get-page-name page-path)))
-        (page-buffer))
-    (setq page-buffer (get-buffer-create (format "%s<%s>"
-                                                 (cf-get-struct-value full-page "title")
-                                                 (cf-get-struct-value full-page "space"))))
+  (confluence-get-page (cf-get-space-name page-path)
+                       (cf-get-page-name page-path)))
+
+(defun confluence-get-page (&optional space-name page-name)
+  (interactive)
+  (cf-show-page (confluence-execute 'confluence1.getPage
+                                    (or space-name
+                                        (cf-prompt-space-name))
+                                    (or page-name
+                                        (cf-prompt-page-name)))))
+
+(defun confluence-create-page-by-path (page-path)
+  (interactive "MPageSpace/PageName: ")
+  (confluence-create-page (cf-get-space-name page-path)
+                          (cf-get-page-name page-path)))
+
+(defun confluence-create-page (&optional space-name page-name)
+  (interactive)
+  (cf-show-page (confluence-execute 'confluence1.storePage
+                                    (list (cons "space" 
+                                                (or space-name
+                                                    (cf-prompt-space-name)))
+                                          (cons "title"
+                                                (or page-name
+                                                    (cf-prompt-page-name)))
+                                          (cons "content" "")))))
+
+(defun cf-save-page ()
+  (if (null confluence-page-id)
+      (error "Could not save Confluence page %s, missing page id"
+             (buffer-name)))
+  (widen)
+  (cf-set-struct-value confluence-page-struct "content"
+                       (buffer-string))
+  (cf-insert-page (confluence-execute 'confluence1.storePage
+                                      confluence-page-struct)))
+
+(defun cf-revert-page (&optional arg noconfirm)
+  (if (and confluence-page-id
+           (or noconfirm
+               (yes-or-no-p "Revert Confluence Page ")))
+      (let ((old-point (point))
+            (new-page (confluence-execute 'confluence1.getPage
+                                          confluence-page-id)))
+        (cf-insert-page new-page)
+        (goto-char old-point))))
+
+(defun cf-show-page (full-page)
+  (let ((page-buffer (get-buffer-create 
+                       (format "%s<%s>"
+                               (cf-get-struct-value full-page "title")
+                               (cf-get-struct-value full-page "space")))))
     (set-buffer page-buffer)
-    (erase-buffer)
-    (kill-all-local-variables)
-    (insert (cf-get-struct-value full-page "content"))
-    (cf-set-struct-value full-page "content" nil)
-    (setq confluence-page-struct full-page)
-    (set-buffer-modified-p nil)
+    (cf-insert-page full-page)
     (goto-char (point-min))
-    (or (eq buffer-undo-list t)
-        (setq buffer-undo-list nil))
-    (confluence-mode)
-    (switch-to-buffer page-buffer)
-    ))
+    (switch-to-buffer page-buffer)))
+
+(defun cf-insert-page (full-page)
+  (widen)
+  (kill-all-local-variables)
+  (erase-buffer)
+  (setq confluence-page-id (cf-get-struct-value full-page "id"))
+  (insert (cf-get-struct-value full-page "content"))
+  (cf-set-struct-value full-page "content" nil)
+  (setq confluence-page-struct full-page)
+  (set-buffer-modified-p nil)
+  (or (eq buffer-undo-list t)
+      (setq buffer-undo-list nil))
+  (confluence-mode))
+
+(defun cf-prompt-space-name ()
+  (let ((space-prompt (if confluence-default-space
+                          (format "Page Space [%s]: " confluence-default-space)
+                        "Page Space: ")))
+    (read-string space-prompt nil 'confluence-space-history
+                 confluence-default-space t)))
+
+(defun cf-prompt-page-name ()
+  (read-string "Page Name: " nil 'confluence-page-history nil t))
 
 (defun cf-get-space-name (page-path)
   (let ((page-paths (split-string page-path "/")))
@@ -96,7 +165,8 @@
 (defun url-decode-entities-in-value (value)
   (cond ((listp value)
          (dolist (struct-val value)
-           (setcdr struct-val (url-decode-entities-in-value (cdr struct-val)))))
+           (setcdr struct-val 
+                   (url-decode-entities-in-value (cdr struct-val)))))
         ((stringp value)
          (setq value (url-decode-entities-in-string value))))
   value)
@@ -167,13 +237,14 @@
   
   )
 
-;; FIXME, add support for reverting buffer (revert-buffer-function)
-
 (define-derived-mode confluence-mode text-mode "Confluence"
   "Set major mode for editing Confluence Wiki pages."
   (turn-off-auto-fill)
+  (make-local-variable 'revert-buffer-function)
+  (setq revert-buffer-function 'cf-revert-page)
   (setq font-lock-defaults
         '(confluence-keywords nil nil nil nil))
+  (add-hook 'write-contents-hooks 'cf-save-page)
 )
 
 (provide 'confluence2)

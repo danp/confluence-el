@@ -86,14 +86,17 @@
 
 (defun confluence-create-page (&optional space-name page-name)
   (interactive)
-  (cf-show-page (confluence-execute 'confluence1.storePage
-                                    (list (cons "space" 
+  (let ((new-page (list (cons "space" 
                                                 (or space-name
                                                     (cf-prompt-space-name)))
                                           (cons "title"
                                                 (or page-name
                                                     (cf-prompt-page-name)))
-                                          (cons "content" "")))))
+                                          (cons "content" "")))
+        (parent-page-id (cf-get-parent-page-id)))
+    (if parent-page-id
+        (setq new-page (append new-page (list (cons "parentId" parent-page-id)))))
+    (cf-show-page (confluence-execute 'confluence1.storePage new-page))))
 
 (defun confluence-ediff-merge-current-page ()
   (interactive)
@@ -103,6 +106,28 @@
   (interactive)
   (cf-ediff-current-page nil))
 
+(defun confluence-reparent-page ()
+  (interactive)
+  (let ((parent-page-id (cf-get-parent-page-id)))
+    (if (and parent-page-id
+             (not (equal parent-page-id (cf-get-struct-value confluence-page-struct "parentId"))))
+        (progn
+          (cf-set-struct-value confluence-page-struct "parentId" parent-page-id)
+          (set-buffer-modified-p t)))))
+
+(defun confluence-rename-page ()
+  (interactive)
+  (let ((page-name (cf-prompt-page-name "New ")))
+    (if (and (> (length page-name) 0)
+             (not (equal page-name (cf-get-struct-value confluence-page-struct "title"))))
+        (progn
+          (cf-set-struct-value confluence-page-struct "title" page-name)
+          (rename-buffer (format "%s<%s>"
+                                 (cf-get-struct-value confluence-page-struct "title")
+                                 (cf-get-struct-value confluence-page-struct "space")))
+          (set-buffer-modified-p t)
+          ))))
+
 (defun cf-ediff-current-page (update-cur-version)
   (if (null confluence-page-id)
       (error "Could not diff Confluence page %s, missing page id"
@@ -111,7 +136,7 @@
         (cur-buf (current-buffer))
         (rev-page (confluence-execute 'confluence1.getPage confluence-page-id)))
     (setq rev-buf
-          (get-buffer-create (format "%s.~%s~" (buffer-name cur-buf) (cf-get-struct-value rev-page "version"))))
+          (get-buffer-create (format "%s.~%s~" (buffer-name cur-buf) (cf-get-struct-value rev-page "version" 0))))
     (with-current-buffer rev-buf
       (cf-insert-page rev-page)
       (toggle-read-only 1)
@@ -157,7 +182,7 @@
     (widen)
     (erase-buffer)
     (setq confluence-page-id (cf-get-struct-value full-page "id"))
-    (insert (cf-get-struct-value full-page "content"))
+    (insert (cf-get-struct-value full-page "content" ""))
     (setq confluence-page-struct (cf-set-struct-value full-page "content" ""))
     (set-buffer-modified-p nil)
     (or keep-undo
@@ -166,15 +191,27 @@
     (confluence-mode)
     (goto-char old-point)))
 
-(defun cf-prompt-space-name ()
+(defun cf-prompt-space-name (&optional prompt-prefix)
   (let ((space-prompt (if confluence-default-space
                           (format "Page Space [%s]: " confluence-default-space)
                         "Page Space: ")))
-    (read-string space-prompt nil 'confluence-space-history
+    (read-string (concat (or prompt-prefix "") space-prompt) nil 'confluence-space-history
                  confluence-default-space t)))
 
-(defun cf-prompt-page-name ()
-  (read-string "Page Name: " nil 'confluence-page-history nil t))
+(defun cf-prompt-page-name (&optional prompt-prefix)
+  (read-string (concat (or prompt-prefix "") "Page Name: ") nil 'confluence-page-history nil t))
+
+(defun cf-get-parent-page-id ()
+  (if (and confluence-page-id
+           (yes-or-no-p "Use current page for parent "))
+      confluence-page-id
+    (let ((parent-space-name (or (cf-get-struct-value confluence-page-struct "space")
+                                 (cf-prompt-space-name "Parent ")))
+          (parent-page-name (cf-prompt-page-name "Parent ")))
+      (if (and (> (length parent-space-name) 0)
+               (> (length parent-page-name) 0))
+          (cf-get-struct-value (confluence-execute 'confluence1.getPage parent-space-name parent-page-name) "id")
+        nil))))
 
 (defun cf-get-space-name (page-path)
   (let ((page-paths (split-string page-path "/")))
@@ -188,8 +225,10 @@
         (cadr page-paths)
       page-path)))
 
-(defun cf-get-struct-value (struct key)
-  (cdr (assoc key struct)))
+(defun cf-get-struct-value (struct key &optional default-value)
+  (or (and struct
+           (cdr (assoc key struct)))
+      default-value))
 
 (defun cf-set-struct-value (struct key value)
   (setcdr (assoc key struct) value)

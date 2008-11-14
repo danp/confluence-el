@@ -27,6 +27,7 @@
 ;;; Code:
 
 (require 'xml-rpc)
+(require 'ediff)
 
 (defvar confluence-url nil)
 (defvar confluence-default-space nil)
@@ -92,15 +93,40 @@
                                                     (cf-prompt-page-name)))
                                           (cons "content" "")))))
 
+(defun confluence-ediff-merge-current-page ()
+  (interactive)
+  (cf-ediff-current-page t))
+
+(defun confluence-ediff-current-page ()
+  (interactive)
+  (cf-ediff-current-page nil))
+
+(defun cf-ediff-current-page (update-cur-version)
+  (if (null confluence-page-id)
+      (error "Could not diff Confluence page %s, missing page id"
+             (buffer-name)))
+  (let ((rev-buf)
+        (cur-buf (current-buffer))
+        (rev-page (confluence-execute 'confluence1.getPage confluence-page-id)))
+    (setq rev-buf
+          (get-buffer-create (format "%s.~%s~" (buffer-name cur-buf) (cf-get-struct-value rev-page "version"))))
+    (with-current-buffer rev-buf
+      (cf-insert-page rev-page)
+      (toggle-read-only 1)
+      )
+    (if update-cur-version
+        (setq confluence-page-struct (cf-set-struct-value (copy-alist rev-page) "content" "")))
+    (ediff-buffers cur-buf rev-buf nil 'confluence-diff)))
+
 (defun cf-save-page ()
   (if (null confluence-page-id)
       (error "Could not save Confluence page %s, missing page id"
              (buffer-name)))
   (widen)
-  (cf-set-struct-value confluence-page-struct "content"
-                       (buffer-string))
   (cf-insert-page (confluence-execute 'confluence1.storePage
-                                      confluence-page-struct) t)
+                                      (cf-set-struct-value (copy-alist confluence-page-struct) "content"
+                                                           (buffer-string)))
+                  t)
   t)
 
 (defun cf-revert-page (&optional arg noconfirm)
@@ -129,8 +155,7 @@
     (erase-buffer)
     (setq confluence-page-id (cf-get-struct-value full-page "id"))
     (insert (cf-get-struct-value full-page "content"))
-    (cf-set-struct-value full-page "content" "")
-    (setq confluence-page-struct full-page)
+    (setq confluence-page-struct (cf-set-struct-value full-page "content" ""))
     (set-buffer-modified-p nil)
     (or keep-undo
         (eq buffer-undo-list t)
@@ -164,7 +189,8 @@
   (cdr (assoc key struct)))
 
 (defun cf-set-struct-value (struct key value)
-  (setcdr (assoc key struct) value))
+  (setcdr (assoc key struct) value)
+  struct)
 
 (defun url-decode-entities-in-value (value)
   (cond ((listp value)

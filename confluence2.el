@@ -79,6 +79,13 @@
                                     (or page-name
                                         (cf-prompt-page-name)))))
 
+(defun confluence-get-parent-page ()
+  (interactive)
+  (let ((parent-page-id (cf-get-struct-value confluence-page-struct "parentId" "0")))
+    (if (equal parent-page-id "0")
+        (message "Current page has no parent page")
+      (cf-show-page (confluence-execute 'confluence1.getPage parent-page-id)))))
+
 (defun confluence-create-page-by-path (page-path)
   (interactive "MPageSpace/PageName: ")
   (confluence-create-page (cf-get-space-name page-path)
@@ -292,24 +299,31 @@
      (1 font-lock-warning-face prepend))
   
    ;; bold
-   '("[*]\\([^*]+\\)[*]"
-     (1 (quote bold) prepend t))
+   '("[ ][*]\\([^*]+\\)[*][ ]"
+     (1 'bold prepend t))
    
    ;; code
    '("{{\\([^*]+\\)}}"
      (1 doxygen-code-face prepend t))
    
    ;; italics/emphasised
-   '("_\\([^_]+\\)_"
-     (1 (quote italic) prepend t))
+   '("[ ]_\\([^_]+\\)_[ ]"
+     (1 'italic prepend t))
 
    ;; underline
-   '("[+]\\([^+]+\\)[+]"
-     (1 (quote underline) prepend t))
+   '("[ ][+]\\([^+]+\\)[+][ ]"
+     (1 'underline prepend t))
 
    ;; headings
-   '("^h[1-9][.] \\(.*\\)$"
-     (1 (quote bold) prepend t))
+   '("^h1[.] \\(.*\\)$"
+     (1 '(bold underline) prepend t))
+   '("^h2[.] \\(.*\\)$"
+     (1 '(bold italic underline) prepend t))
+   '("^h3[.] \\(.*\\)$"
+     (1 '(italic underline) prepend t))
+   '("^h[4-9][.] \\(.*\\)$"
+     (1 'underline prepend t))
+
 
   ;; links
    '("\\[\\(\\([^|]*\\)[|]\\)?\\([^]]+\\)\\]"

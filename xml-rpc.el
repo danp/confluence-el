@@ -408,6 +408,8 @@ the parsed XML response is returned."
   ;; Check if we have a methodResponse
   (cond
    ((not (eq (car-safe (car-safe xml)) 'methodResponse))
+    (setq xml-rpc-fault-string "No methodResponse found")
+    (setq xml-rpc-fault-code   0)
     (error "No methodResponse found"))
 
    ;; Did we get a fault response
@@ -420,6 +422,8 @@ the parsed XML response is returned."
    ;; Interpret the XML list and produce a more useful data structure
    (t
     (let ((valpart (cdr (cdaddr (caddar xml)))))
+      (setq xml-rpc-fault-string nil)
+      (setq xml-rpc-fault-code   nil)
       (xml-rpc-xml-list-to-value valpart)))))
 
 ;;
@@ -509,7 +513,8 @@ or nil if called with ASYNC-CALLBACK-FUNCTION."
 				  url-http-response-status))
 		       (if (> url-http-response-status 299)
 			   (error "Error during request: %s"
-				  url-http-response-status)))
+				  url-http-response-status))
+                       (url-mark-buffer-as-dead buffer))
 		     (xml-rpc-request-process-buffer buffer)))))))))
 
 

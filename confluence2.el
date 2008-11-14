@@ -107,11 +107,8 @@
   (if (and confluence-page-id
            (or noconfirm
                (yes-or-no-p "Revert Confluence Page ")))
-      (let ((old-point (point))
-            (new-page (confluence-execute 'confluence1.getPage
-                                          confluence-page-id)))
-        (cf-insert-page new-page)
-        (goto-char old-point))))
+      (cf-insert-page (confluence-execute 'confluence1.getPage
+                                          confluence-page-id))))
 
 (defun cf-show-page (full-page)
   (let* ((page-buf-name (format "%s<%s>"
@@ -127,17 +124,19 @@
     (switch-to-buffer page-buffer)))
 
 (defun cf-insert-page (full-page &optional keep-undo)
-  (widen)
-  (erase-buffer)
-  (setq confluence-page-id (cf-get-struct-value full-page "id"))
-  (insert (cf-get-struct-value full-page "content"))
-  (cf-set-struct-value full-page "content" "")
-  (setq confluence-page-struct full-page)
-  (set-buffer-modified-p nil)
-  (or keep-undo
-      (eq buffer-undo-list t)
-      (setq buffer-undo-list nil))
-  (confluence-mode))
+  (let ((old-point (point)))
+    (widen)
+    (erase-buffer)
+    (setq confluence-page-id (cf-get-struct-value full-page "id"))
+    (insert (cf-get-struct-value full-page "content"))
+    (cf-set-struct-value full-page "content" "")
+    (setq confluence-page-struct full-page)
+    (set-buffer-modified-p nil)
+    (or keep-undo
+        (eq buffer-undo-list t)
+        (setq buffer-undo-list nil))
+    (confluence-mode)
+    (goto-char old-point)))
 
 (defun cf-prompt-space-name ()
   (let ((space-prompt (if confluence-default-space

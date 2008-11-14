@@ -36,6 +36,8 @@
 (defvar confluence-space-history nil)
 (defvar confluence-page-history nil)
 
+(defvar confluence-before-save-hook nil)
+
 (defvar confluence-page-struct nil)
 (make-variable-buffer-local 'confluence-page-struct)
 (put 'confluence-page-struct 'permanent-local t)
@@ -123,6 +125,7 @@
       (error "Could not save Confluence page %s, missing page id"
              (buffer-name)))
   (widen)
+  (run-hooks 'confluence-before-save-hook)
   (cf-insert-page (confluence-execute 'confluence1.storePage
                                       (cf-set-struct-value (copy-alist confluence-page-struct) "content"
                                                            (buffer-string)))

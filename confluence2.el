@@ -217,10 +217,18 @@ latest version of that page saved in confluence."
 (defun cf-rpc-execute (method-name &rest params)
   "Executes a confluence rpc call, managing the login token and logging in if
 necessary."
-  (apply 'cf-rpc-execute-internal method-name (confluence-login) params))
+  (condition-case err
+      (apply 'cf-rpc-execute-internal method-name (confluence-login) params)
+    (error
+     (if (and xml-rpc-fault-string
+              (string-match "\\<authenticated\\>\\|\\<expired\\>" xml-rpc-fault-string))
+         (apply 'cf-rpc-execute-internal method-name (confluence-login t) params)
+       (error (error-message-string err))))))
 
 (defun cf-rpc-execute-internal (method-name &rest params)
   "Executes a raw confluence rpc call."
+  (setq xml-rpc-fault-string nil)
+  (setq xml-rpc-fault-code   nil)
   (let ((url-http-version "1.0")
         (url-http-attempt-keepalives nil)
         (page-url (cf-get-url)))

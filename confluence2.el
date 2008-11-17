@@ -84,7 +84,7 @@ re-login to the current url."
           (setq cur-token
                 (cf-rpc-execute-internal 
                  'confluence1.login
-                 (read-string "Username: " user-login-name)
+                 (read-string "Username: " user-login-name nil nil t)
                  (read-passwd "Password: ")))
           (cf-set-struct-value 'confluence-login-token-alist
                                (cf-get-url) cur-token)
@@ -108,6 +108,17 @@ buffer (if not already loaded) and switches to it."
                                         (cf-prompt-space-name))
                                     (or page-name
                                         (cf-prompt-page-name)))))
+
+(defun confluence-get-page-with-url (&optional arg)
+  "With ARG, prompts for the confluence url to use for the get page call
+(based on `confluence-default-space-alist'), then calls `confluence-get-page'."
+  (interactive "P")
+  (if arg
+      (let* ((temp-url-hist (and confluence-default-space-alist
+                                 (mapcar 'car confluence-default-space-alist)))
+             (confluence-url (read-string "Url: " nil 'temp-url-hist nil t)))
+        (confluence-get-page))
+    (confluence-get-page)))
 
 (defun confluence-get-page-at-point ()
   "Opens the confluence page at the current point.  If the link is a url,

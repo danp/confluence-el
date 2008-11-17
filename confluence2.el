@@ -501,5 +501,15 @@ something else."
         '(confluence-keywords nil nil nil nil))
 )
 
+(defvar confluence-prefix-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "f" 'confluence-get-page-at-point)
+    (define-key map "c" 'confluence-create-page)
+    (define-key map "d" 'confluence-ediff-current-page)
+    (define-key map "m" 'confluence-ediff-merge-current-page)
+    (define-key map "r" 'confluence-rename-page)
+    map)
+  "Keybinding prefix map which can be bound for common functions in confluence mode.")
+
 (provide 'confluence2)
 ;;; confluence2.el ends here

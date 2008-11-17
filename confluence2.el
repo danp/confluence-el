@@ -522,5 +522,17 @@ something else."
     map)
   "Keybinding prefix map which can be bound for common functions in confluence mode.")
 
+(defun confluence-newline-and-indent ()
+  "Inserts a newline and indents using the previous indentation.
+Supports lists, tables, and headers."
+  (interactive)
+  (let ((indentation nil))
+    (save-excursion
+      (if (re-search-backward "^\\(?:\\(?:\\(?:[*#]+\\|h[0-9][.]\\)[ \t]+\\)\\|[|]+\\)" nil t)
+          (setq indentation (match-string 0))))
+    (newline)
+    (if indentation
+        (insert indentation))))
+
 (provide 'confluence2)
 ;;; confluence2.el ends here

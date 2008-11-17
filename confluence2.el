@@ -534,9 +534,15 @@ something else."
   "Inserts a newline and indents using the previous indentation.
 Supports lists, tables, and headers."
   (interactive)
-  (let ((indentation nil))
+  (let ((indentation nil)
+        (limit nil))
     (save-excursion
-      (if (re-search-backward "^\\(?:\\(?:\\(?:[*#]+\\|h[0-9][.]\\)[ \t]+\\)\\|[|]+\\)" nil t)
+      (while (and (search-backward "\n" nil 'silent)
+                  use-hard-newlines
+                  (not (get-text-property (match-beginning 0) 'hard))))
+      (setq limit (point)))
+    (save-excursion
+      (if (re-search-backward "^\\(?:\\(?:\\(?:[*#]+\\|h[0-9][.]\\)[ \t]+\\)\\|[|]+\\)" limit t)
           (setq indentation (match-string 0))))
     (newline)
     (if indentation

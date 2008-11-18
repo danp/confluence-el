@@ -45,7 +45,7 @@
   :group 'confluence
   :type '(alist :key-type string :value-type string))
 
-(defcustom conflence-search-max-results 20
+(defcustom confluence-search-max-results 20
   "Maximum number of results to return from a search."
   :group 'confluence
   :type 'integer)

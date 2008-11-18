@@ -216,6 +216,7 @@ latest version of that page saved in confluence."
 
 (defun confluence-delete-page ()
   "Deletes the current confluence page."
+  (interactive)
   (if (not confluence-page-id)
       (error "Could not delete Confluence page %s, missing page id"
              (buffer-name)))
@@ -228,10 +229,13 @@ necessary."
   (condition-case err
       (apply 'cf-rpc-execute-internal method-name (confluence-login) params)
     (error
+     (if xml-rpc-fault-string
+         (setq xml-rpc-fault-string (cf-url-decode-entities-in-value 
+                                     xml-rpc-fault-string)))
      (if (and xml-rpc-fault-string
               (string-match "\\<authenticated\\>\\|\\<expired\\>" xml-rpc-fault-string))
          (apply 'cf-rpc-execute-internal method-name (confluence-login t) params)
-       (error (error-message-string err))))))
+       (error (cf-url-decode-entities-in-value (error-message-string err)))))))
 
 (defun cf-rpc-execute-internal (method-name &rest params)
   "Executes a raw confluence rpc call."

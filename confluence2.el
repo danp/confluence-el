@@ -50,6 +50,25 @@
   :group 'confluence
   :type 'integer)
 
+(defcustom confluence-coding-alist nil
+  "Coding systems to use for a given service ('url' -> 'coding-system').  Confluence versions < 2.8 incorrectly
+managed xml encoding and used the server's platform default encoding (ignoring any specified by the xml itself).  If
+you are working with an older system, you will need to configure the coding system here (default 'utf-8 is used if not
+configured here)."
+  :group 'confluence
+  :type '(alist  :key-type string :value-type coding-system))
+
+(defvar confluence-coding-prefix-alist (list (cons 'utf-16-be "\376\377")
+                                             (cons 'utf-16-le "\377\376"))
+  "Extra prefix necessary when decoding a string in a given coding system (not necessary for all coding systems).  The
+empty string is used if nothing is defined here, which works for most coding systems.")
+
+(defvar confluence-coding-bytes-per-char-alist (list (cons 'utf-16-be 2)
+                                                     (cons 'utf-16-le 2))
+  "Number of bytes per character for the coding system.  Assumed be be 1 or variable if not defined here, which works
+for most coding systems.")
+
+
 (defvar confluence-before-save-hook nil
   "List of functions to be called before saving a confluence page.")
 (defvar confluence-before-revert-hook nil
@@ -78,6 +97,11 @@
   "The id of the page in the current buffer.")
 (make-variable-buffer-local 'confluence-page-id)
 (put 'confluence-page-id 'permanent-local t)
+
+;; these are never set directly, only defined here to make the compiler happy
+(defvar confluence-coding-system nil)
+(defvar confluence-coding-prefix nil)
+(defvar confluence-coding-num-bytes nil)
 
 (defun confluence-login (&optional arg)
   "Logs into the current confluence url, if necessary.  With ARG, forces
@@ -282,24 +306,34 @@ necessary."
   (condition-case err
       (apply 'cf-rpc-execute-internal method-name (confluence-login) params)
     (error
-     (if xml-rpc-fault-string
-         (setq xml-rpc-fault-string (cf-url-decode-entities-in-value 
-                                     xml-rpc-fault-string)))
      (if (and xml-rpc-fault-string
               (string-match "\\<authenticated\\>\\|\\<expired\\>" xml-rpc-fault-string))
          (apply 'cf-rpc-execute-internal method-name (confluence-login t) params)
-       (error (cf-url-decode-entities-in-value (error-message-string err)))))))
+       (error (error-message-string err))))))
 
 (defun cf-rpc-execute-internal (method-name &rest params)
-  "Executes a raw confluence rpc call."
+  "Executes a raw confluence rpc call.  Handles all necessary encoding/decoding of strings."
   (setq xml-rpc-fault-string nil)
   (setq xml-rpc-fault-code   nil)
-  (let ((url-http-version "1.0")
-        (url-http-attempt-keepalives nil)
-        (page-url (cf-get-url)))
+  (let* ((url-http-version "1.0")
+         (url-http-attempt-keepalives nil)
+         (page-url (cf-get-url))
+         (confluence-coding-system (cf-get-struct-value confluence-coding-alist page-url 'utf-8))
+         (confluence-coding-prefix (cf-get-struct-value confluence-coding-prefix-alist confluence-coding-system ""))
+         (confluence-coding-num-bytes (cf-get-struct-value confluence-coding-bytes-per-char-alist
+                                                           confluence-coding-system 1))
+         (xml-rpc-encode-coding-system confluence-coding-system)
+         (xml-rpc-encode-coding-prefix-length (length confluence-coding-prefix)))
     (if (not page-url)
         (error "No confluence url configured"))
-    (cf-url-decode-entities-in-value (apply 'xml-rpc-method-call page-url method-name params))))
+    (condition-case err
+        (cf-url-decode-entities-in-value (apply 'xml-rpc-method-call page-url method-name params))
+      (error
+       (if xml-rpc-fault-string
+           (setq xml-rpc-fault-string (cf-url-decode-entities-in-value 
+                                       xml-rpc-fault-string)))
+       (error (cf-url-decode-entities-in-value (error-message-string err)))))
+    ))
 
 (defun cf-rpc-get-page-by-name (space-name page-name)
   "Executes a confluence 'getPage' rpc call with space and page names."
@@ -503,10 +537,10 @@ something else."
                                                 ("gt" . ?>)))))
                             ((save-match-data
                                (and (string-match "^#\\([0-9]+\\)$" ent-str)
-                                    (string (string-to-number (match-string 1 ent-str))))))
+                                    (cf-number-entity-to-string (string-to-number (match-string 1 ent-str))))))
                             ((save-match-data
                                (and (string-match "^#x\\([0-9A-Fa-f]+\\)$" ent-str)
-                                    (string (string-to-number (match-string 1 ent-str) 16)))))
+                                    (cf-number-entity-to-string (string-to-number (match-string 1 ent-str) 16)))))
                             (t ent-str))
                            t t)))
 
@@ -515,6 +549,19 @@ something else."
           (replace-match "\n" t t))
 	(buffer-string))
     string))
+
+(defun cf-number-entity-to-string (num)
+  "Convert an xml number entity to the appropriate character using the current `confluence-coding-system' (which is
+set by `cf-rpc-execute-internal')."
+  (let ((char-list nil))
+    (setq char-list (cons (logand num 255) char-list))
+    (setq num (lsh num -8))
+    (while (/= 0 num)
+      (setq char-list (cons (logand num 255) char-list))
+      (setq num (lsh num -8)))
+    (while (< (length char-list) confluence-coding-num-bytes)
+      (setq char-list (cons 0 char-list)))
+    (decode-coding-string (concat confluence-coding-prefix (apply 'string char-list)) confluence-coding-system t)))
 
 
 (defconst confluence-keywords

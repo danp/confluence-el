@@ -195,6 +195,15 @@ utf-8 coding system."
   "Set this to 1 or greater to avoid killing temporary buffers.
 Set it higher to get some info in the *Messages* buffer")
 
+(defcustom xml-rpc-encode-coding-system 'utf-8
+  "Coding system to use for outgoing strings (if unicode strings are allowed).  If this value is modified,
+`xml-rpc-encode-coding-prefix-length' should be set appropriately as well."
+  :type 'coding-system :group 'xml-rpc)
+
+(defcustom xml-rpc-encode-coding-prefix-length 0
+  "Length of prefix used by coding system (for utf-16 variants, this should be 2, otherwise generally 0)."
+  :type 'integer :group 'xml-rpc)
+
 (defconst xml-rpc-version "1.6"
   "Current Version of xml-rpc.el")
 
@@ -356,7 +365,7 @@ functions in xml.el."
 	      (and (eq 1 (length charset-list))
 		   (eq 'ascii (car charset-list)))
 	      (not xml-rpc-base64-encode-unicode))
-	  `((value nil (string nil ,(url-insert-entities-in-string value))))
+	  `((value nil (string nil ,(xml-insert-entities-in-string value))))
 	`((value nil (base64 nil ,(base64-encode-string
 				   (encode-coding-string value 'utf-8))))))))
    ((xml-rpc-value-doublep value)
@@ -626,6 +635,25 @@ parameters."
 	   (list (cons nil (concat "URL/HTTP Error: " response))))
 	  (t
 	   (xml-rpc-xml-to-response response)))))
+
+(defun xml-insert-entities-in-string (value)
+  "Entity encodes the given string, handling &, <, >, \", and any non-ascii values according to
+`xml-rpc-encode-coding-system'"
+  (setq value (url-insert-entities-in-string value))
+  (if (string-match "[^[:ascii:]]" value)
+      (with-temp-buffer
+        (insert value)
+        (goto-char (point-min))
+        (while (re-search-forward "[^[:ascii:]]" nil t)
+          (let ((encoded-str (encode-coding-string (match-string 0) xml-rpc-encode-coding-system))
+                (encoded-num 0)
+                (char-idx xml-rpc-encode-coding-prefix-length))
+            (while (> (length encoded-str) char-idx)
+              (setq encoded-num (+ (lsh encoded-num 8) (elt encoded-str char-idx)))
+              (setq char-idx (1+ char-idx)))
+            (replace-match (concat "&#" (number-to-string encoded-num) ";") t t)))
+        (setq value (buffer-string))))
+  value)
 
 (eval-when-compile
   (unless (fboundp 'xml-print)

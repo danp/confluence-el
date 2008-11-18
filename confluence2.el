@@ -45,6 +45,11 @@
   :group 'confluence
   :type '(alist :key-type string :value-type string))
 
+(defcustom conflence-search-max-results 20
+  "Maximum number of results to return from a search."
+  :group 'confluence
+  :type 'integer)
+
 (defvar confluence-before-save-hook nil
   "List of functions to be called before saving a confluence page.")
 (defvar confluence-before-revert-hook nil
@@ -56,6 +61,8 @@
   "History list of spaces accessed.")
 (defvar confluence-page-history nil
   "History list of pages accessed.")
+(defvar confluence-search-history nil
+  "History list of queries.")
 
 (defvar confluence-page-url nil
   "The url used to load the current buffer.")
@@ -127,19 +134,23 @@ confluence page."
   (interactive)
   (if (thing-at-point-looking-at "\\[\\(\\([^|]*\\)[|]\\)?\\([^]]+\\)\\]")
       (let ((url (match-string 3)))
+        (set-text-properties 0 (length url) nil url)
         (if (string-match thing-at-point-url-regexp url)
             (browse-url url)
-          (set-text-properties 0 (length url) nil url)
-          (let ((space-name (cf-get-struct-value confluence-page-struct
-                                                      "space"))
-                (page-name url))
-            (if (string-match "^\\([^:]*\\)[:]\\(.*\\)$" page-name)
-                (progn
-                  (setq space-name (match-string 1 page-name))
-                  (setq page-name (match-string 2 page-name))))
-            (if (string-match "^\\(.*?\\)[#^].*$" page-name)
-                (setq page-name (match-string 1 page-name)))
-            (confluence-get-page space-name page-name))))
+          (if (equal (cf-get-struct-value confluence-page-struct
+                                          "FAKE_PAGE" "")
+                     "search")
+              (cf-show-page (cf-rpc-get-page-by-id url))
+            (let ((space-name (cf-get-struct-value confluence-page-struct
+                                                   "space"))
+                  (page-name url))
+              (if (string-match "^\\([^:]*\\)[:]\\(.*\\)$" page-name)
+                  (progn
+                    (setq space-name (match-string 1 page-name))
+                    (setq page-name (match-string 2 page-name))))
+              (if (string-match "^\\(.*?\\)[#^].*$" page-name)
+                  (setq page-name (match-string 1 page-name)))
+              (confluence-get-page space-name page-name)))))
     (if (thing-at-point 'url)
         (browse-url-at-point)
       (confluence-get-page))))
@@ -222,6 +233,48 @@ latest version of that page saved in confluence."
              (buffer-name)))
   (cf-rpc-execute 'confluence1.removePage confluence-page-id)
   (kill-buffer (current-buffer)))
+
+(defun confluence-search-in-space (&optional query)
+  "Runs a confluence search for QUERY, restricting the results to the space of
+the current buffer."
+  (interactive)
+  (confluence-search nil (cf-get-struct-value confluence-page-struct "space")))
+
+(defun confluence-search (&optional query space-name)
+  "Runs a confluence search for QUERY, optionally restricting the results to
+the given SPACE-NAME."
+  (interactive)
+  (or query
+      (setq query (read-string "Query: " nil 
+                               'confluence-search-history nil t)))
+  (let ((params (list (cons "type" "page")))
+        (search-results nil)
+        (search-page (list (cons "title" "Confluence Search Results")
+                           (cons "FAKE_PAGE" "search")))
+        (search-buffer nil))
+    (if (> (length space-name) 0)
+        (cf-set-struct-value 'params "spaceKey" space-name))
+    (setq search-results (cf-rpc-execute 'confluence1.search query
+                                         params confluence-search-max-results))
+    (with-temp-buffer
+      (insert "h1. Confluence Search Results for '" query "'\n\n")
+      (dolist (search-result search-results)
+        (insert (format "[%s|%s]\n"
+                        (cf-get-struct-value search-result "title")
+                        (cf-get-struct-value search-result "id")))
+        (let ((excerpt (cf-get-struct-value search-result "excerpt")))
+          (if (> (length excerpt) 0)
+              (insert excerpt "\n")))
+        (insert "\n"))
+      (cf-set-struct-value 'search-page "content" (buffer-string)))
+    (setq search-buffer (get-buffer-create "*Confluence Search Results*"))
+    (with-current-buffer search-buffer
+      (if (eq major-mode 'confluence-mode)
+        (run-hooks 'confluence-before-revert-hook))
+      (cf-insert-page search-page)
+      (goto-char (point-min))
+      (toggle-read-only 1))
+    (switch-to-buffer search-buffer)))
 
 (defun cf-rpc-execute (method-name &rest params)
   "Executes a confluence rpc call, managing the login token and logging in if
@@ -322,7 +375,10 @@ and loading the data if necessary."
 (defun cf-insert-page (full-page &optional keep-undo)
   "Does the work of loading confluence page data into the current buffer.  If
 KEEP-UNDO, the current undo state will not be erased."
-  (let ((old-point (point)))
+  (let ((old-point (point))
+        (was-read-only buffer-read-only))
+    (if was-read-only
+        (toggle-read-only))
     (widen)
     (erase-buffer)
     (setq confluence-page-struct full-page)
@@ -335,7 +391,9 @@ KEEP-UNDO, the current undo state will not be erased."
         (eq buffer-undo-list t)
         (setq buffer-undo-list nil))
     (confluence-mode)
-    (goto-char old-point)))
+    (goto-char old-point)
+    (if was-read-only
+        (toggle-read-only 1))))
 
 (defun cf-prompt-space-name (&optional prompt-prefix)
   "Prompts for a confluence space name."

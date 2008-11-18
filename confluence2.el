@@ -495,7 +495,7 @@ given STRUCT-VAR."
 
 (defun cf-get-url ()
   "Gets the confluence url to use for the current operation."
-  (or confluence-url confluence-page-url))
+  (or confluence-page-url confluence-url))
 
 (defun cf-get-default-space ()
   "Gets the default confluence space to use for the current operation."

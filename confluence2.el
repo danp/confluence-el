@@ -214,6 +214,14 @@ latest version of that page saved in confluence."
           (set-buffer-modified-p t)
           ))))
 
+(defun confluence-delete-page ()
+  "Deletes the current confluence page."
+  (if (not confluence-page-id)
+      (error "Could not delete Confluence page %s, missing page id"
+             (buffer-name)))
+  (cf-rpc-execute 'confluence1.removePage confluence-page-id)
+  (kill-buffer (current-buffer)))
+
 (defun cf-rpc-execute (method-name &rest params)
   "Executes a confluence rpc call, managing the login token and logging in if
 necessary."

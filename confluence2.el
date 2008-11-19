@@ -22,6 +22,11 @@
 
 ;;; Commentary:
 
+;;
+;; INSTALLATION 
+;;
+;; You must set confluence-url in your .emacs file before using the
+;; functions in this moudule.
 ;; 
 
 ;;; Code:
@@ -36,7 +41,13 @@
   :prefix "confluence-")
 
 (defcustom confluence-url nil
-  "Url of the confluence service to interact with."
+  "Url of the confluence service to interact with.  This must
+point to the XML-RPC api URL for your confluence installation.
+
+If your confluence installation is at http://intranet/confluence,
+then the XML-RPC URL is probably
+http://intranet/confluence/rpc/xmlrpc.  Setting this in your
+.emacs is necessary before interacting with the Wiki."
   :group 'confluence
   :type 'string)
 

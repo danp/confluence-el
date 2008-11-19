@@ -281,15 +281,14 @@ re-login to the current url."
   "Loads a confluence page for the given SPACE-NAME and PAGE-NAME into a
 buffer (if not already loaded) and switches to it."
   (interactive)
-  (let ((confluence-input-url nil))
-    (cf-prompt-page-info nil 'page-name 'space-name 'confluence-input-url)
-    (cf-show-page (cf-rpc-get-page-by-name space-name page-name))))
+  (cf-prompt-page-info nil 'page-name 'space-name)
+  (cf-show-page (cf-rpc-get-page-by-name space-name page-name)))
 
 (defun confluence-get-page-with-url (&optional arg)
-  "With ARG, prompts for the confluence url to use for the get page call
-(based on `confluence-default-space-alist')."
+  "With ARG, prompts for the confluence url to use for the get page call (based on `confluence-default-space-alist')."
   (interactive "P")
-  (let ((confluence-switch-url arg))
+  (let ((confluence-switch-url arg)
+        (confluence-input-url nil))
     (confluence-get-page)))
 
 (defun confluence-get-page-at-point ()
@@ -323,9 +322,8 @@ a buffer (if not already loaded) and switches to it."
 loads it into a new buffer."
   (interactive)
   (let ((new-page (list (cons "content" "")))
-        (parent-page-id (cf-get-parent-page-id))
-        (confluence-input-url nil))
-    (cf-prompt-page-info nil 'page-name 'space-name 'confluence-input-url)
+        (parent-page-id (cf-get-parent-page-id)))
+    (cf-prompt-page-info nil 'page-name 'space-name)
     (cf-set-struct-value 'new-page "title" page-name)
     (cf-set-struct-value 'new-page "space" space-name)
     (if parent-page-id
@@ -333,10 +331,11 @@ loads it into a new buffer."
     (cf-show-page (cf-rpc-save-page new-page))))
 
 (defun confluence-create-page-with-url (&optional arg)
-  "With ARG, prompts for the confluence url to use for the create page call
-(based on `confluence-default-space-alist')."
+  "With ARG, prompts for the confluence url to use for the create page call (based on
+`confluence-default-space-alist')."
   (interactive "P")
-  (let ((confluence-switch-url arg))
+  (let ((confluence-switch-url arg)
+        (confluence-input-url nil))
     (confluence-create-page)))
 
 (defun confluence-ediff-merge-current-page ()
@@ -586,25 +585,20 @@ buffer."
           (cf-get-struct-value (cf-rpc-get-page-by-name parent-space-name parent-page-name) "id")
         nil))))
 
-(defun cf-prompt-page-info (prompt-prefix page-name-var space-name-var &optional page-url-var)
+(defun cf-prompt-page-info (prompt-prefix page-name-var space-name-var)
   "Prompts for page info using the appropriate input function and sets the given vars appropriately."
   (let ((result-list
          (funcall confluence-prompt-page-function prompt-prefix
                   (symbol-value page-name-var) (symbol-value space-name-var))))
     (set page-name-var (nth 0 result-list))
-    (set space-name-var (nth 1 result-list))
-    (if page-url-var
-        (set page-url-var (nth 2 result-list)))))
+    (set space-name-var (nth 1 result-list))))
 
 (defun cf-prompt-page-by-component (prompt-prefix page-name space-name)
   "Builds a list of (page-name space-name <url>) by prompting the user for each.  Suitable for use with
 `confluence-prompt-page-function'."
-  (let ((result-list nil)
-        (confluence-input-url nil))
-    (if confluence-switch-url
-        (progn
-          (setq confluence-input-url (cf-prompt-url prompt-prefix))
-          (setq result-list (cons confluence-input-url result-list))))
+  (let ((result-list nil))
+    (if (and confluence-switch-url (not confluence-input-url))
+        (setq confluence-input-url (cf-prompt-url prompt-prefix)))
     (setq result-list (cons 
                        (or space-name
                            (cf-prompt-space-name prompt-prefix)) result-list))
@@ -617,12 +611,9 @@ buffer."
   "Builds a list of (page-name space-name <url>) by prompting the user for each (where page and space name are
 specified as one path).  Suitable for use with `confluence-prompt-page-function'."
   (let ((result-list nil)
-        (page-path nil)
-        (confluence-input-url nil))
-    (if confluence-switch-url
-        (progn
-          (setq confluence-input-url (cf-prompt-url prompt-prefix))
-          (setq result-list (cons confluence-input-url result-list))))
+        (page-path nil))
+    (if (and confluence-switch-url (not confluence-input-url))
+        (setq confluence-input-url (cf-prompt-url prompt-prefix)))
     (if (and page-name space-name)
         (setq result-list (cons page-name (cons space-name result-list)))
       (progn

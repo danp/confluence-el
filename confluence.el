@@ -54,7 +54,8 @@
 ;; Once you have opened a page, made changes, simply saving the page
 ;; ("\C-x\C-f") will push the changes back to the wiki.
 ;;
-;; To view the chagnes in your page versus what is in the wiki, type \C-xwd
+;; To view the chagnes in your page versus what is in the wiki, type
+;; \C-xw=, or run M-x confluence-ediff-current-page.
 ;;
 
 ;; 

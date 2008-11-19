@@ -290,7 +290,11 @@ re-login to the current url."
 (defun confluence-get-page (&optional page-name space-name)
   "Loads a confluence page for the given SPACE-NAME and PAGE-NAME
 into a buffer (if not already loaded) and switches to it.
-Analogous to `find-file'."
+Analogous to `find-file'.  Every time you navitage to a page with
+this function (or M-. `confluence-get-page-at-point'), it is
+saved off into a stack (`confluence-tag-stack') that you can then
+pop back out of to return back through your navigation path (with
+M-* `confluence-pop-tag-stack')."
   (interactive)
   (when confluence-last-visited 
     (push confluence-last-visited confluence-tag-stack))
@@ -318,7 +322,6 @@ page call (based on `confluence-default-space-alist')."
         (confluence-input-url nil))
     (confluence-get-page)))
 
-;; TODO: add the stack in here...
 (defun confluence-get-page-at-point ()
   "Opens the confluence page at the current point.  If the link is a url,
 opens the page using `browse-url', otherwise attempts to load it

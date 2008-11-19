@@ -589,10 +589,14 @@ set by `cf-rpc-execute-internal')."
   (list
   
    '("{\\([^}]+\\)}"
-     (1 font-lock-constant-face))
+     (1 'font-lock-constant-face))
   
-   '("{warning}\\(.*?\\){warning}"
-     (1 font-lock-warning-face prepend))
+   '("{warning\\(?:[:][^}]*\\)?}\\(.*?\\){warning}"
+     (1 'font-lock-warning-face prepend))
+   '("{note\\(?:[:][^}]*\\)?}\\(.*?\\){note}"
+     (1 'font-lock-minor-warning-face prepend))
+   '("{info\\(?:[:][^}]*\\)?}\\(.*?\\){info}"
+     (1 'font-lock-comment-face prepend))
   
    ;; bold
    '("[ ][*]\\([^*]+\\)[*][ ]"
@@ -627,7 +631,7 @@ set by `cf-rpc-execute-internal')."
    ;; links
    '("\\(\\[\\)\\([^|]*\\)[|]\\([^]]+\\)\\(\\]\\)"
      (1 'font-lock-constant-face)
-     (2 font-lock-string-face)
+     (2 'font-lock-string-face)
      (3 'underline)
      (4 'font-lock-constant-face))
    '("\\(\\[\\)\\([^]|]+\\)\\(\\]\\)"
@@ -635,6 +639,12 @@ set by `cf-rpc-execute-internal')."
      (2 '(font-lock-string-face underline))
      (3 'font-lock-constant-face))
 
+   ;; images, embedded content
+   '("\\([!]\\)\\([^!]+\\)\\([!]\\)"
+     (1 'font-lock-constant-face)
+     (2 'font-lock-reference-face)
+     (3 'font-lock-constant-face))
+   
    ;; tables
    '("[|]\\{2\\}\\([^|\n]+\\)"
      (1 'bold))

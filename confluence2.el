@@ -109,6 +109,11 @@ for most coding systems.")
 (make-variable-buffer-local 'confluence-page-id)
 (put 'confluence-page-id 'permanent-local t)
 
+(defvar confluence-browse-function nil
+  "The function to use for browsing links in the current buffer.")
+(make-variable-buffer-local 'confluence-browse-function)
+(put 'confluence-browse-function 'permanent-local t)
+
 ;; these are never set directly, only defined here to make the compiler happy
 (defvar confluence-coding-system nil)
 (defvar confluence-coding-prefix nil)
@@ -172,20 +177,9 @@ confluence page."
         (set-text-properties 0 (length url) nil url)
         (if (string-match thing-at-point-url-regexp url)
             (browse-url url)
-          (if (equal (cf-get-struct-value confluence-page-struct
-                                          "FAKE_PAGE" "")
-                     "search")
-              (cf-show-page (cf-rpc-get-page-by-id url))
-            (let ((space-name (cf-get-struct-value confluence-page-struct
-                                                   "space"))
-                  (page-name url))
-              (if (string-match "^\\([^:]*\\)[:]\\(.*\\)$" page-name)
-                  (progn
-                    (setq space-name (match-string 1 page-name))
-                    (setq page-name (match-string 2 page-name))))
-              (if (string-match "^\\(.*?\\)[#^].*$" page-name)
-                  (setq page-name (match-string 1 page-name)))
-              (confluence-get-page space-name page-name)))))
+          (if confluence-browse-function
+              (funcall confluence-browse-function url)
+            (cf-simple-browse-function url))))
     (if (thing-at-point 'url)
         (browse-url-at-point)
       (confluence-get-page))))
@@ -284,8 +278,7 @@ the given SPACE-NAME."
                                'confluence-search-history nil t)))
   (let ((params (list (cons "type" "page")))
         (search-results nil)
-        (search-page (list (cons "title" "Confluence Search Results")
-                           (cons "FAKE_PAGE" "search")))
+        (search-page (list (cons "title" "Confluence Search Results")))
         (search-buffer nil))
     (if (> (length space-name) 0)
         (cf-set-struct-value 'params "spaceKey" space-name))
@@ -307,6 +300,7 @@ the given SPACE-NAME."
       (if (eq major-mode 'confluence-mode)
         (run-hooks 'confluence-before-revert-hook))
       (cf-insert-page search-page)
+      (setq confluence-browse-function 'cf-search-browse-function)
       (goto-char (point-min))
       (toggle-read-only 1))
     (switch-to-buffer search-buffer)))
@@ -439,6 +433,22 @@ KEEP-UNDO, the current undo state will not be erased."
     (goto-char old-point)
     (if was-read-only
         (toggle-read-only 1))))
+
+(defun cf-search-browse-function (url)
+  "Browse function used in search buffers (the links are page ids)."
+  (cf-show-page (cf-rpc-get-page-by-id url)))
+
+(defun cf-simple-browse-function (url)
+  "Simple browse function used in page buffers."
+  (let ((space-name (cf-get-struct-value confluence-page-struct "space"))
+        (page-name url))
+    (if (string-match "^\\([^:]*\\)[:]\\(.*\\)$" page-name)
+        (progn
+          (setq space-name (match-string 1 page-name))
+          (setq page-name (match-string 2 page-name))))
+    (if (string-match "^\\(.*?\\)[#^].*$" page-name)
+        (setq page-name (match-string 1 page-name)))
+    (confluence-get-page space-name page-name)))
 
 (defun cf-prompt-space-name (&optional prompt-prefix)
   "Prompts for a confluence space name."
@@ -655,6 +665,7 @@ set by `cf-rpc-execute-internal')."
     (define-key map "d" 'confluence-ediff-current-page)
     (define-key map "m" 'confluence-ediff-merge-current-page)
     (define-key map "r" 'confluence-rename-page)
+    (define-key map "s" 'confluence-search)
     map)
   "Keybinding prefix map which can be bound for common functions in confluence mode.")
 

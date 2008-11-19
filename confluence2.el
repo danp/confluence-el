@@ -27,6 +27,36 @@
 ;;
 ;; You must set confluence-url in your .emacs file before using the
 ;; functions in this moudule.
+;;
+;; Some examples:
+;;
+;;   ;; loading xml-rpc.el may not be necessary, it depends on your
+;;   ;; installed version of Emacs, it was necessary on 22.1.1
+;;
+;;   (load (expand-file-name "~/software/emacs/confluence-el/xml-rpc.el"))
+;;   (load (expand-file-name "~/software/emacs/confluence-el/confluence2.el"))
+;;   (setf confluence-url "http://intranet/confluence/rpc/xmlrpc")
+;;
+;; USING CONFLUENCE MODE
+;;
+;; To open a page, M-x confluence-get-page and enter the path to the
+;; page, for example, to open a page in your home space: ~username/Tasks
+;;
+;; It is often convienient to bind this to a global key \C-xwf in your .emacs file:
+;;   
+;;    (global-set-key "\C-xwf")
+;;
+;; Also, if you want keybindings for confluence-mode, you can put the
+;; following in your .emacs file:
+;;
+;;    (local-set-key "\C-xw" confluence-prefix-map)
+;;
+;; Once you have opened a page, made changes, simply saving the page
+;; ("\C-x\C-f") will push the changes back to the wiki.
+;;
+;; To view the chagnes in your page versus what is in the wiki, type \C-xwd
+;;
+
 ;; 
 
 ;;; Code:
@@ -674,7 +704,7 @@ set by `cf-rpc-execute-internal')."
   (let ((map (make-sparse-keymap)))
     (define-key map "f" 'confluence-get-page-at-point)
     (define-key map "c" 'confluence-create-page)
-    (define-key map "d" 'confluence-ediff-current-page)
+    (define-key map "=" 'confluence-ediff-current-page)
     (define-key map "m" 'confluence-ediff-merge-current-page)
     (define-key map "r" 'confluence-rename-page)
     (define-key map "s" 'confluence-search)

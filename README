@@ -1,5 +1,6 @@
-Overview
---------------------------------------------------------------------------------
+OVERVIEW
+======================================================================
+
 This is an Emacs lisp library for interacting with the Confluence Wiki
 Software from Atlassian:
 
@@ -8,136 +9,46 @@ Software from Atlassian:
 It allows you to pull and edit the wiki-markup for a page and store it
 back into your confluence instance.
 
- M-x confluence-edit-page (bound to "\C-xwo")
- Section Name: FOO
- Page Name: My Sandbox
+This mode can be downloaded from:
 
-Once you're finished your edits, you can see a diff:
-
- M-x cnf-diff-local-page-vs-wiki (bound to "\C-xw=")
-
-When you're happy with the update, store it back to the wiki:
-
- M-x confluence-store-page (bound to "\C-xws")
-
-and it should push the page back into confluence.  
-
-To install run install.sh, you will be prompted or instructed for what you need
-to do.
-
-If you want to install manually, do the following:
-
-  - put confluence.el into a place where Emacs can load it
-  - create $HOME/.confluence
-  - copy confluence.scm into $HOME/.confluence
-  - add the following to your .emacs:
-
-  (load "confluence.el")
-  (setq *confluence-xml-rpc-url* "https://your-confluence-instance.com/confluence/rpc/xmlrpc")
-  (cnf-library-init "your-confluence-username")
-
-Emacs usually uses auto-fill-mode on text buffers, Confluence likes
-paragraphs to be one long line.  These two features are somewhat in
-conflict.  To deal with this, confluence-el attempts to disable
-auto-fill-mode on the buffer when you're editing a page.
+  http://code.google.com/p/confluence-el/
 
 
 
-Installation 
---------------------------------------------------------------------------------
-This software requires Java since the xml-rpc interaction is
-implemented using JScheme and a Web Services library from the Apache
-project.  I attempted to find a usable xml-rpc library for Emacs, but
-couldn't find one that worked when I tried to use it (Wed Oct 18
-12:45:23 EDT 2006).
+INSTALLATION 
+======================================================================
 
-All the installation shell script does is create a $HOME/.confluence
-directory copy in the confluence.scm file, copy the confluence.el file
-into your $HOME/.emacs.d (or directory that you specify) and prints
-out a few lines that you will have to add to your .emacs file.
+You must set confluence-url in your .emacs file before using the
+functions in this moudule.
 
-The library initialization code will prompt you for your password, and
-if it needs to, it will download the JScheme and xml-rpc jar files.
+Some examples:
 
+  (load (expand-file-name "~/software/emacs/confluence-el/xml-rpc.el"))
+  (load (expand-file-name "~/software/emacs/confluence-el/confluence2.el"))
+  (setf confluence-url "http://intranet/confluence/rpc/xmlrpc")
 
-TODO
---------------------------------------------------------------------------------
-Port to some xmlrpc.el that works so we don't depend on Java, JScheme, etc.
+USING CONFLUENCE MODE
+======================================================================
 
-Until then, the wget'ing of the jar files should probably be moved
-into the install.sh so people can optionally do it if they want to
-instead of making it part of the Emacs library init code.
+To open a page, M-x confluence-get-page and enter the path to the
+page, for example, to open a page in your home space: ~username/Tasks
 
+It is often convienient to bind this to a global key \C-xwf in your .emacs file:
+  
+   (global-set-key "\C-xwf")
 
-Known Issues
---------------------------------------------------------------------------------
+Once you have opened a page, made changes, simply saving the page
+("\C-x\C-f") will push the changes back to the wiki.
 
-Self Signed Certificates
+To view the chagnes in your page versus what is in the wiki, type \C-xwd
 
-I've sometimes (not under Linux with 1.5.0._08, but under OS X with
-1.5.0_06-64) run into issues with the xmlrpc libraries not allowing the login
-to succeed because of a self-signed cert (you have to visit the
-*confluence-jscheme* buffer to see the cert failure) when accessing confluence
-via ssl (https).  If you're getting an exception in the *confluence-jscheme*
-buffer when it's trying to log in, this may be the problem.
-
-I couldn't find a way to allow the xmlrpc to not require a signed cert (if you
-look, Jakarta's httpclient allows this with a change of the socket factory),
-but I was able to work around it by importing the server's cert into the java
-keystore.
-
-To get the cert, I used openssl's s_client and cut and pasted the cert (you
-can't actually use this cert by the way, it's from one of our internal
-webservers and I've purposefully changed it so it's not valid): 
-
-  -----BEGIN CERTIFICATE-----
-  Hak34789A9SgAwIBAgIDPQsbMA0GCSqGSIb3DQEBBQUAMIHsMQswCQYDVQQGEwJV
-  UzEQMA4GA1UECBMHQXJpem9uYTETMBEGA1UEBxMKU2NvdHRzZGFsZTElMCMGA1UE
-  ChMcU3RhcmZpZWxkIFRlY2hub2xvZ2llcywgSW5jLjEwMC4GA1UECxMnaHR0cDov
-  L3d3dy5zdGFyZmllbGR0ZWNoLmNvbS9yZXBvc2l0b3J5MTEwLwYDVQQDEyhTdGFy
-  ZmllbGQgU2VjdXJlIENlcnRpa9lkj343b24gQXV0aG9yaXR5MSowKAYJKoZIhvcN
-  AQkBFhtwcmFjdGljZXNAc3RhcmZpZWxkdGVjaC5jb20wHhcNMDUxMDA2MTcwMDI4
-  WhcNMDgxMDA2MTcwMDI4WjBXMRgwFgYDVQQKEw8qLmhtc29ubGluZS5jb20xITAf
-  BgNVBAsTGERvbWFpbiBDb250cm9sIFZhbGlkYXRlZDEYMBYGA1UEAxMPKi5obXNv
-  bmxpbmUuY29tMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCXJSk0O7YDwZHI
-  oVNBrCzZSWzSzDvxd7ZDSUUenn/MH+JxBCAByWboA/zcncdJWQRJzAQr6cRZa3RA
-  koWWCb3yIq7uXfdxRQ0e8RbYWzW20NGzXn4sU8InbBbktS2L6EPiQagE0XBr6TrN
-  pO0Ve/uh30tUHjO+wVT6UScO9RRfoQIDAQABo4IBrTCCAakwCQYDVR0TBAIwADAL
-  BgNVHQ8EBAMCBaAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMFYGA1Ud
-  HwRPME0wS6BJoEeGRWh0dHA6Ly9jZXJ0aWZpY2F0ZXMuc3RhcmZpZWxkdGVjaC5j
-  b20vcmVwb3NpdG9yeS9zdGFyZmllbGRpc3N1aW5nLmNybDBPBgNVHSAESDBGMEQG
-  C2CGSAGG+EUBBxcDMDUwMwYIKwYBBQUHAgEWJ2h0dHA6Ly93d3cuc3RhcmZpZWxk
-  dGVjaC5jb20vcmVwb3NpdG9yeTCBhgYIKwYBBQUHAQEEejB4MCkGCCsGAQUFBzAB
-  hh1odHRwOi8vb2NzcC5zdGFyZmllbGR0ZWNoLmNvbTBLBggrBgEFBQcwAoY/aHR0
-  cDovL2NlcnRpZmljYXRlcy5zdGFyZmllbGR0ZWNoLmNvbS9yZXBvc2l0b3J5L3Nm
-  X2lzc3VpbmcuY3J0MB0GA1UdDgQWBBQQFdZnVKO+1HR2XWm4INvLyqbS5zAfBgNV
-  HSMEGDAWgBSsVd636hPr/Jho4lNgHvElPozu5zANBgkqhkiG9w0BAQUFAAOBgQB0
-  QSuM2Op2q7c5ikqdt5RZk2a0mPQrRpViVUCGN1I5eM5524UIKBPJBAM8AfBXxhQ9
-  0t7tvqW2qJmj5Kf5TZSowl4F/uEYlZQE/NSxh+XqrnSpwWo9o3mUXK4TR5lnEWRI
-  P3DUStF2fySdUw0lxkBDXzhdI2fG7tXaDIfPxKC0Sg==
-  -----END CERTIFICATE-----
-
-Into a local file, then ran sun's keytool to import it into the trusted certs
-list:
-
-  asymmetrical:~ mortis$ sudo keytool -import -alias my-confluence-cert -file my-confluence.cert -keystore /System/Library/Frameworks/JavaVM.framework/Versions/1.5.0/Home/lib/security/cacerts 
-  Password:
-  Enter keystore password:  changeit
-  Owner: CN=*.my-confluence.com, OU=Domain Control Validated, O=*.my-confluence.com
-  Issuer: EMAILADDRESS=somebody@somewhere.com, CN=Starfield Secure Certification Authority, OU=http://www.somewhere.com/repository, O="Somewhere Technologies, Inc.", L=Somewhere, ST=Somewhere, C=US
-  Serial number: 3d0b1b
-  Valid from: Thu Oct 06 13:00:28 EDT 2005 until: Mon Oct 06 13:00:28 EDT 2008
-  Certificate fingerprints:
-           MD5:  FA:08:2B:79:2B:8F:CD:C6:07:D8:07:75:1E:86:CA:EC
-           SHA1: 06:0E:D4:0F:78:41:24:7E:B0:68:5B:80:5E:82:85:5E:CF:CD:95:46
-  Trust this certificate? [no]:  yes
-  Certificate was added to keystore
-
-And yes, apparently the default cert store password for the jdk is 'changeit'.
 
 
 Changes
 --------------------------------------------------------------------------------
+ * 1.0 : Wed Nov 19 10:39:31 EST 2008
+   - confluence2.el: created by James Ahlborn, eliminates the need for 
+     JScheme for xmlrpc, now includes xml-rpc.el
  * 0.2 : Wed Sep 19 09:18:18 EDT 2007
    - confluence.scm: removed '.page' suffix on binary page file storage
      this fixes bugs in the earlier tgz

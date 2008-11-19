@@ -108,7 +108,8 @@
 ;;      (progn
 ;;        (add-hook 'confluence-mode-hook 'longlines-mode)
 ;;        (add-hook 'confluence-before-save-hook 'longlines-before-revert-hook)
-;;        (add-hook 'confluence-before-revert-hook 'longlines-before-revert-hook))))
+;;        (add-hook 'confluence-before-revert-hook 'longlines-before-revert-hook)
+;;        (add-hook 'confluence-mode-hook '(lambda () (local-set-key "\C-j" 'confluence-newline-and-indent))))))
 ;;
 ;; ;; LongLines mode: http://www.emacswiki.org/emacs-en/LongLines
 ;; (autoload 'longlines-mode "longlines" "LongLines Mode." t)
@@ -214,20 +215,24 @@ empty string is used if nothing is defined here, which works for most coding sys
   "Number of bytes per character for the coding system.  Assumed be be 1 or variable if not defined here, which works
 for most coding systems.")
 
-
 (defvar confluence-before-save-hook nil
   "List of functions to be called before saving a confluence page.")
+
 (defvar confluence-before-revert-hook nil
   "List of functions to be called before reverting a confluence page.")
 
 (defvar confluence-login-token-alist nil
   "AList of 'url' -> 'token' login information.")
+
 (defvar confluence-path-history nil
   "History list of paths accessed.")
+
 (defvar confluence-space-history nil
   "History list of spaces accessed.")
+
 (defvar confluence-page-history nil
   "History list of pages accessed.")
+
 (defvar confluence-search-history nil
   "History list of queries.")
 
@@ -258,6 +263,11 @@ for most coding systems.")
 (defvar confluence-input-url nil)
 (defvar confluence-switch-url nil)
 
+(defvar confluence-tag-stack (list)
+  "TAGs style stack support for push (\\C-xw.) and pop (\\C-xw*)")
+
+(defvar confluence-last-visited nil)
+
 (defun confluence-login (&optional arg)
   "Logs into the current confluence url, if necessary.  With ARG, forces
 re-login to the current url."
@@ -278,23 +288,41 @@ re-login to the current url."
     cur-token))
 
 (defun confluence-get-page (&optional page-name space-name)
-  "Loads a confluence page for the given SPACE-NAME and PAGE-NAME into a
-buffer (if not already loaded) and switches to it."
+  "Loads a confluence page for the given SPACE-NAME and PAGE-NAME
+into a buffer (if not already loaded) and switches to it.
+Analogous to `find-file'."
   (interactive)
+  (when confluence-last-visited 
+    (push confluence-last-visited confluence-tag-stack))
   (cf-prompt-page-info nil 'page-name 'space-name)
-  (cf-show-page (cf-rpc-get-page-by-name space-name page-name)))
+  (cf-show-page (cf-rpc-get-page-by-name space-name page-name))
+  (setf confluence-last-visited (list space-name page-name)))
+
+(defun confluence-pop-tag-stack ()
+  "Returns to the last previously visited space/page by popping
+the tags stack."
+  (interactive)
+  (if (null confluence-tag-stack)
+      (message "Stack is empty...")
+    (destructuring-bind (space-name page-name)
+        (pop confluence-tag-stack)
+      (message "CNF: heading back to: %s %s" space-name page-name)
+      (setf confluence-last-visited nil)
+      (confluence-get-page page-name space-name))))
 
 (defun confluence-get-page-with-url (&optional arg)
-  "With ARG, prompts for the confluence url to use for the get page call (based on `confluence-default-space-alist')."
+  "With ARG, prompts for the confluence url to use for the get
+page call (based on `confluence-default-space-alist')."
   (interactive "P")
   (let ((confluence-switch-url arg)
         (confluence-input-url nil))
     (confluence-get-page)))
 
+;; TODO: add the stack in here...
 (defun confluence-get-page-at-point ()
   "Opens the confluence page at the current point.  If the link is a url,
-opens the page using `browse-url', otherwise attempts to load it as a
-confluence page."
+opens the page using `browse-url', otherwise attempts to load it
+as a confluence page.  Analogous to M-. (`find-tag')."
   (interactive)
   (if (thing-at-point-looking-at "\\[\\(\\([^|]*\\)[|]\\)?\\([^]]+\\)\\]")
       (let ((url (match-string 3)))
@@ -309,8 +337,9 @@ confluence page."
       (confluence-get-page))))
 
 (defun confluence-get-parent-page ()
-  "Loads a confluence page for the parent of the current confluence page into
-a buffer (if not already loaded) and switches to it."
+  "Loads a confluence page for the parent of the current
+confluence page into a buffer (if not already loaded) and
+switches to it."
   (interactive)
   (let ((parent-page-id (cf-get-struct-value confluence-page-struct "parentId" "0")))
     (if (equal parent-page-id "0")
@@ -318,8 +347,8 @@ a buffer (if not already loaded) and switches to it."
       (cf-show-page (cf-rpc-get-page-by-id parent-page-id)))))
 
 (defun confluence-create-page (&optional page-name space-name)
-  "Creates a new confluence page for the given SPACE-NAME and PAGE-NAME and
-loads it into a new buffer."
+  "Creates a new confluence page for the given SPACE-NAME and
+PAGE-NAME and loads it into a new buffer."
   (interactive)
   (let ((new-page (list (cons "content" "")))
         (parent-page-id (cf-get-parent-page-id)))
@@ -767,6 +796,8 @@ set by `cf-rpc-execute-internal')."
      (1 'font-lock-doc-face prepend))
    '("{tip\\(?:[:][^}]*\\)?}\\(.*?\\){tip}"
      (1 'font-lock-comment-face prepend))
+   '("{noformat\\(?:[:][^}]*\\)?}\\(.*?\\){noformat}"
+     (1 'font-lock-comment-face prepend))
   
    ;; bold
    '("[ ][*]\\([^*]+\\)[*][ ]"
@@ -840,12 +871,15 @@ set by `cf-rpc-execute-internal')."
 
 (defvar confluence-prefix-map
   (let ((map (make-sparse-keymap)))
-    (define-key map "f" 'confluence-get-page-at-point)
+    (define-key map "f" 'confluence-get-page)
     (define-key map "c" 'confluence-create-page)
     (define-key map "=" 'confluence-ediff-current-page)
     (define-key map "m" 'confluence-ediff-merge-current-page)
+    (define-key map "p" 'confluence-get-parent-page)
     (define-key map "r" 'confluence-rename-page)
     (define-key map "s" 'confluence-search)
+    (define-key map "." 'confluence-get-page-at-point)
+    (define-key map "*" 'confluence-pop-tag-stack)
     map)
   "Keybinding prefix map which can be bound for common functions in confluence mode.")
 

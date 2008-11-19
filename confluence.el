@@ -191,6 +191,11 @@ http://intranet/confluence/rpc/xmlrpc.  Setting this in your
   :group 'confluence
   :type 'integer)
 
+(defcustom confluence-prompt-page-function 'cf-prompt-page-by-component
+  "The function to used to prompt for pages when opening new pages."
+  :group 'confluence
+  :type 'function)
+
 (defcustom confluence-coding-alist nil
   "Coding systems to use for a given service ('url' -> 'coding-system').  Confluence versions < 2.8 incorrectly
 managed xml encoding and used the server's platform default encoding (ignoring any specified by the xml itself).  If
@@ -217,6 +222,8 @@ for most coding systems.")
 
 (defvar confluence-login-token-alist nil
   "AList of 'url' -> 'token' login information.")
+(defvar confluence-path-history nil
+  "History list of paths accessed.")
 (defvar confluence-space-history nil
   "History list of spaces accessed.")
 (defvar confluence-page-history nil
@@ -248,6 +255,8 @@ for most coding systems.")
 (defvar confluence-coding-system nil)
 (defvar confluence-coding-prefix nil)
 (defvar confluence-coding-num-bytes nil)
+(defvar confluence-input-url nil)
+(defvar confluence-switch-url nil)
 
 (defun confluence-login (&optional arg)
   "Logs into the current confluence url, if necessary.  With ARG, forces
@@ -268,33 +277,19 @@ re-login to the current url."
           ))
     cur-token))
 
-(defun confluence-get-page-by-path (page-path)
-  "Loads a confluence page for the given PAGE-PATH into a buffer (if not
-already loaded) and switches to it.  The PAGE-PATH is expected to be of the
-format '<SPACE-NAME>/<PAGE-NAME>'."
-  (interactive "MPageSpace/PageName: ")
-  (confluence-get-page (cf-get-space-name page-path)
-                       (cf-get-page-name page-path)))
-
-(defun confluence-get-page (&optional space-name page-name)
+(defun confluence-get-page (&optional page-name space-name)
   "Loads a confluence page for the given SPACE-NAME and PAGE-NAME into a
 buffer (if not already loaded) and switches to it."
   (interactive)
-  (cf-show-page (cf-rpc-get-page-by-name
-                                    (or space-name
-                                        (cf-prompt-space-name))
-                                    (or page-name
-                                        (cf-prompt-page-name)))))
+  (let ((confluence-input-url nil))
+    (cf-prompt-page-info nil 'page-name 'space-name 'confluence-input-url)
+    (cf-show-page (cf-rpc-get-page-by-name space-name page-name))))
 
 (defun confluence-get-page-with-url (&optional arg)
   "With ARG, prompts for the confluence url to use for the get page call
-(based on `confluence-default-space-alist'), then calls `confluence-get-page'."
+(based on `confluence-default-space-alist')."
   (interactive "P")
-  (if arg
-      (let* ((temp-url-hist (and confluence-default-space-alist
-                                 (mapcar 'car confluence-default-space-alist)))
-             (confluence-url (read-string "Url: " nil 'temp-url-hist nil t)))
-        (confluence-get-page))
+  (let ((confluence-switch-url arg))
     (confluence-get-page)))
 
 (defun confluence-get-page-at-point ()
@@ -323,29 +318,26 @@ a buffer (if not already loaded) and switches to it."
         (message "Current page has no parent page")
       (cf-show-page (cf-rpc-get-page-by-id parent-page-id)))))
 
-(defun confluence-create-page-by-path (page-path)
-  "Creates a new confluence page for the given PAGE-PATH and loads it into a
-new buffer.  The PAGE-PATH is expected to be of the format
-'<SPACE-NAME>/<PAGE-NAME>'."
-  (interactive "MPageSpace/PageName: ")
-  (confluence-create-page (cf-get-space-name page-path)
-                          (cf-get-page-name page-path)))
-
-(defun confluence-create-page (&optional space-name page-name)
+(defun confluence-create-page (&optional page-name space-name)
   "Creates a new confluence page for the given SPACE-NAME and PAGE-NAME and
 loads it into a new buffer."
   (interactive)
-  (let ((new-page (list (cons "space" 
-                              (or space-name
-                                  (cf-prompt-space-name)))
-                        (cons "title"
-                              (or page-name
-                                  (cf-prompt-page-name)))
-                        (cons "content" "")))
-        (parent-page-id (cf-get-parent-page-id)))
+  (let ((new-page (list (cons "content" "")))
+        (parent-page-id (cf-get-parent-page-id))
+        (confluence-input-url nil))
+    (cf-prompt-page-info nil 'page-name 'space-name 'confluence-input-url)
+    (cf-set-struct-value 'new-page "title" page-name)
+    (cf-set-struct-value 'new-page "space" space-name)
     (if parent-page-id
         (cf-set-struct-value 'new-page "parentId" parent-page-id))
     (cf-show-page (cf-rpc-save-page new-page))))
+
+(defun confluence-create-page-with-url (&optional arg)
+  "With ARG, prompts for the confluence url to use for the create page call
+(based on `confluence-default-space-alist')."
+  (interactive "P")
+  (let ((confluence-switch-url arg))
+    (confluence-create-page)))
 
 (defun confluence-ediff-merge-current-page ()
   "Starts an EDiff session diffing the current confluence page against the
@@ -578,7 +570,72 @@ KEEP-UNDO, the current undo state will not be erased."
           (setq page-name (match-string 2 page-name))))
     (if (string-match "^\\(.*?\\)[#^].*$" page-name)
         (setq page-name (match-string 1 page-name)))
-    (confluence-get-page space-name page-name)))
+    (confluence-get-page page-name space-name)))
+
+(defun cf-get-parent-page-id ()
+  "Gets a confluence parent page id, optionally using the one in the current
+buffer."
+  (if (and confluence-page-id
+           (yes-or-no-p "Use current page for parent "))
+      confluence-page-id
+    (let ((parent-space-name (or (cf-get-struct-value confluence-page-struct "space") nil))
+          (parent-page-name nil))
+      (cf-prompt-page-info "Parent " 'parent-page-name 'parent-space-name)
+      (if (and (> (length parent-space-name) 0)
+               (> (length parent-page-name) 0))
+          (cf-get-struct-value (cf-rpc-get-page-by-name parent-space-name parent-page-name) "id")
+        nil))))
+
+(defun cf-prompt-page-info (prompt-prefix page-name-var space-name-var &optional page-url-var)
+  "Prompts for page info using the appropriate input function and sets the given vars appropriately."
+  (let ((result-list
+         (funcall confluence-prompt-page-function prompt-prefix
+                  (symbol-value page-name-var) (symbol-value space-name-var))))
+    (set page-name-var (nth 0 result-list))
+    (set space-name-var (nth 1 result-list))
+    (if page-url-var
+        (set page-url-var (nth 2 result-list)))))
+
+(defun cf-prompt-page-by-component (prompt-prefix page-name space-name)
+  "Builds a list of (page-name space-name <url>) by prompting the user for each.  Suitable for use with
+`confluence-prompt-page-function'."
+  (let ((result-list nil)
+        (confluence-input-url nil))
+    (if confluence-switch-url
+        (progn
+          (setq confluence-input-url (cf-prompt-url prompt-prefix))
+          (setq result-list (cons confluence-input-url result-list))))
+    (setq result-list (cons 
+                       (or space-name
+                           (cf-prompt-space-name prompt-prefix)) result-list))
+    (setq result-list (cons 
+                       (or page-name
+                           (cf-prompt-page-name prompt-prefix)) result-list))
+    result-list))
+
+(defun cf-prompt-page-by-path (prompt-prefix page-name space-name)
+  "Builds a list of (page-name space-name <url>) by prompting the user for each (where page and space name are
+specified as one path).  Suitable for use with `confluence-prompt-page-function'."
+  (let ((result-list nil)
+        (page-path nil)
+        (confluence-input-url nil))
+    (if confluence-switch-url
+        (progn
+          (setq confluence-input-url (cf-prompt-url prompt-prefix))
+          (setq result-list (cons confluence-input-url result-list))))
+    (if (and page-name space-name)
+        (setq result-list (cons page-name (cons space-name result-list)))
+      (progn
+        (setq page-path (cf-prompt-path prompt-prefix page-name space-name))
+        (setq result-list (cons (cf-get-space-name-from-path page-path) result-list))
+        (setq result-list (cons (cf-get-page-name-from-path page-path) result-list))))
+    result-list))
+
+(defun cf-prompt-url (&optional prompt-prefix)
+  "Prompts for a confluence url."
+  (let ((temp-url-hist (and confluence-default-space-alist
+                            (mapcar 'car confluence-default-space-alist))))
+    (read-string (concat (or prompt-prefix "") "Url: ") nil 'temp-url-hist nil t)))
 
 (defun cf-prompt-space-name (&optional prompt-prefix)
   "Prompts for a confluence space name."
@@ -594,33 +651,23 @@ KEEP-UNDO, the current undo state will not be erased."
   "Prompts for a confluence page name."
   (read-string (concat (or prompt-prefix "") "Page Name: ") nil 'confluence-page-history nil t))
 
-(defun cf-get-parent-page-id ()
-  "Gets a confluence parent page id, optionally using the one in the current
-buffer."
-  (if (and confluence-page-id
-           (yes-or-no-p "Use current page for parent "))
-      confluence-page-id
-    (let ((parent-space-name (or (cf-get-struct-value confluence-page-struct "space")
-                                 (cf-prompt-space-name "Parent ")))
-          (parent-page-name (cf-prompt-page-name "Parent ")))
-      (if (and (> (length parent-space-name) 0)
-               (> (length parent-page-name) 0))
-          (cf-get-struct-value (cf-rpc-get-page-by-name parent-space-name parent-page-name) "id")
-        nil))))
+(defun cf-prompt-path (prompt-prefix page-name space-name)
+  "Prompts for a confluence page path."
+  (read-string (concat (or prompt-prefix "") "PageSpace/PageName: ")
+               (if space-name (concat space-name "/") nil)
+               'confluence-path-history nil t))
 
-(defun cf-get-space-name (page-path)
+(defun cf-get-space-name-from-path (page-path)
   "Parses the space name from the given PAGE-PATH."
-  (let ((page-paths (split-string page-path "/")))
-    (if (> (length page-paths) 1)
-        (car page-paths)
-      (cf-get-default-space))))
+  (if (string-match "\\([^/]+\\)[/]\\(.*\\)" page-path)
+      (match-string 1 page-path)
+    (cf-get-default-space)))
 
-(defun cf-get-page-name (page-path)
+(defun cf-get-page-name-from-path (page-path)
   "Parses the page name from the given PAGE-PATH."
-  (let ((page-paths (split-string page-path "/")))
-    (if (> (length page-paths) 1)
-        (cadr page-paths)
-      page-path)))
+  (if (string-match "\\([^/]+\\)[/]\\(.*\\)" page-path)
+      (match-string 2 page-path)
+    page-path))
 
 (defun cf-get-struct-value (struct key &optional default-value)
   "Gets a STRUCT value for the given KEY from the given struct, returning the
@@ -646,7 +693,7 @@ given STRUCT-VAR."
 
 (defun cf-get-url ()
   "Gets the confluence url to use for the current operation."
-  (or confluence-page-url confluence-url))
+  (or confluence-input-url confluence-page-url confluence-url))
 
 (defun cf-get-default-space ()
   "Gets the default confluence space to use for the current operation."

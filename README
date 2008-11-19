@@ -24,7 +24,7 @@ functions in this moudule.
 Some examples:
 
   (load (expand-file-name "~/software/emacs/confluence-el/xml-rpc.el"))
-  (load (expand-file-name "~/software/emacs/confluence-el/confluence2.el"))
+  (load (expand-file-name "~/software/emacs/confluence-el/confluence.el"))
   (setf confluence-url "http://intranet/confluence/rpc/xmlrpc")
 
 USING CONFLUENCE MODE
@@ -47,7 +47,7 @@ To view the chagnes in your page versus what is in the wiki, type \C-xwd
 Changes
 --------------------------------------------------------------------------------
  * 1.0 : Wed Nov 19 10:39:31 EST 2008
-   - confluence2.el: created by James Ahlborn, eliminates the need for 
+   - confluence.el: created by James Ahlborn, eliminates the need for 
      JScheme for xmlrpc, now includes xml-rpc.el
  * 0.2 : Wed Sep 19 09:18:18 EDT 2007
    - confluence.scm: removed '.page' suffix on binary page file storage

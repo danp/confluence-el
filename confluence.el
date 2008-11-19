@@ -23,6 +23,12 @@
 ;;; Commentary:
 
 ;;
+;; DOWNLOADING
+;;
+;; This module is available at Google Code:
+;;
+;;   http://code.google.com/p/confluence-el/
+;;
 ;; INSTALLATION 
 ;;
 ;; You must set confluence-url in your .emacs file before using the

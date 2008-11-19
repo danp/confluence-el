@@ -596,6 +596,8 @@ set by `cf-rpc-execute-internal')."
    '("{note\\(?:[:][^}]*\\)?}\\(.*?\\){note}"
      (1 'font-lock-minor-warning-face prepend))
    '("{info\\(?:[:][^}]*\\)?}\\(.*?\\){info}"
+     (1 'font-lock-doc-face prepend))
+   '("{tip\\(?:[:][^}]*\\)?}\\(.*?\\){tip}"
      (1 'font-lock-comment-face prepend))
   
    ;; bold

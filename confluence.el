@@ -1,4 +1,4 @@
-;;; confluence2.el --- Emacs mode for interacting with confluence wikie
+;;; confluence.el --- Emacs mode for interacting with confluence wikie
 
 ;; Copyright (C) 2008  Free Software Foundation, Inc.
 
@@ -34,7 +34,7 @@
 ;;   ;; installed version of Emacs, it was necessary on 22.1.1
 ;;
 ;;   (load (expand-file-name "~/software/emacs/confluence-el/xml-rpc.el"))
-;;   (load (expand-file-name "~/software/emacs/confluence-el/confluence2.el"))
+;;   (load (expand-file-name "~/software/emacs/confluence-el/confluence.el"))
 ;;   (setf confluence-url "http://intranet/confluence/rpc/xmlrpc")
 ;;
 ;; USING CONFLUENCE MODE
@@ -729,5 +729,5 @@ Supports lists, tables, and headers."
     (if indentation
         (insert indentation))))
 
-(provide 'confluence2)
-;;; confluence2.el ends here
+(provide 'confluence)
+;;; confluence.el ends here

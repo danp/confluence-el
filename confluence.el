@@ -41,7 +41,7 @@
 ;;
 ;;   (load (expand-file-name "~/software/emacs/confluence-el/xml-rpc.el"))
 ;;   (load (expand-file-name "~/software/emacs/confluence-el/confluence.el"))
-;;   (setf confluence-url "http://intranet/confluence/rpc/xmlrpc")
+;;   (setq confluence-url "http://intranet/confluence/rpc/xmlrpc")
 ;;
 ;; USING CONFLUENCE MODE
 ;;
@@ -256,6 +256,11 @@ for most coding systems.")
 (make-variable-buffer-local 'confluence-browse-function)
 (put 'confluence-browse-function 'permanent-local t)
 
+(defvar confluence-load-info nil
+  "The information necessary to reload the page.")
+(make-variable-buffer-local 'confluence-load-info)
+(put 'confluence-load-info 'permanent-local t)
+
 ;; these are never set directly, only defined here to make the compiler happy
 (defvar confluence-coding-system nil)
 (defvar confluence-coding-prefix nil)
@@ -263,10 +268,8 @@ for most coding systems.")
 (defvar confluence-input-url nil)
 (defvar confluence-switch-url nil)
 
-(defvar confluence-tag-stack (list)
+(defvar confluence-tag-stack nil
   "TAGs style stack support for push (\\C-xw.) and pop (\\C-xw*)")
-
-(defvar confluence-last-visited nil)
 
 (defun confluence-login (&optional arg)
   "Logs into the current confluence url, if necessary.  With ARG, forces
@@ -296,23 +299,8 @@ saved off into a stack (`confluence-tag-stack') that you can then
 pop back out of to return back through your navigation path (with
 M-* `confluence-pop-tag-stack')."
   (interactive)
-  (when confluence-last-visited 
-    (push confluence-last-visited confluence-tag-stack))
   (cf-prompt-page-info nil 'page-name 'space-name)
-  (cf-show-page (cf-rpc-get-page-by-name space-name page-name))
-  (setf confluence-last-visited (list space-name page-name)))
-
-(defun confluence-pop-tag-stack ()
-  "Returns to the last previously visited space/page by popping
-the tags stack."
-  (interactive)
-  (if (null confluence-tag-stack)
-      (message "Stack is empty...")
-    (destructuring-bind (space-name page-name)
-        (pop confluence-tag-stack)
-      (message "CNF: heading back to: %s %s" space-name page-name)
-      (setf confluence-last-visited nil)
-      (confluence-get-page page-name space-name))))
+  (cf-show-page (cf-rpc-get-page-by-name space-name page-name)))
 
 (defun confluence-get-page-with-url (&optional arg)
   "With ARG, prompts for the confluence url to use for the get
@@ -370,6 +358,34 @@ PAGE-NAME and loads it into a new buffer."
         (confluence-input-url nil))
     (confluence-create-page)))
 
+(defun confluence-pop-tag-stack ()
+  "Returns to the last previously visited space/page by popping
+the tags stack."
+  (interactive)
+  (if (null confluence-tag-stack)
+      (message "Stack is empty...")
+    (let* ((stack-info (pop confluence-tag-stack))
+           (load-info (nth 0 stack-info))
+           (old-point (nth 1 stack-info))
+           (page-type (nth 0 load-info))
+           (confluence-input-url (nth 1 load-info)))
+      (cond 
+       ((eq page-type 'page)
+        (cf-show-page (cf-rpc-get-page-by-id (nth 2 load-info)) t))
+       ((eq page-type 'search)
+        (cf-show-search-results 
+         (cf-rpc-search (nth 2 load-info) (nth 3 load-info))
+         load-info t))
+       (t
+        (error "Invalid stack info")))
+      (goto-char old-point))))
+
+(defun confluence-push-tag-stack ()
+  "Pushes the current page onto the visited stack if it is a confluence page."
+  (interactive)
+  (if confluence-load-info
+      (push (list confluence-load-info (point)) confluence-tag-stack)))
+
 (defun confluence-ediff-merge-current-page ()
   "Starts an EDiff session diffing the current confluence page against the
 latest version of that page saved in confluence with intent of saving the
@@ -414,6 +430,10 @@ latest version of that page saved in confluence."
       (error "Could not delete Confluence page %s, missing page id"
              (buffer-name)))
   (cf-rpc-execute 'confluence1.removePage confluence-page-id)
+  (while (assoc confluence-load-info confluence-tag-stack)
+    (setq confluence-tag-stack
+          (remove (assoc confluence-load-info confluence-tag-stack)
+                  confluence-tag-stack)))
   (kill-buffer (current-buffer)))
 
 (defun confluence-search-in-space (&optional query)
@@ -429,34 +449,8 @@ the given SPACE-NAME."
   (or query
       (setq query (read-string "Query: " nil 
                                'confluence-search-history nil t)))
-  (let ((params (list (cons "type" "page")))
-        (search-results nil)
-        (search-page (list (cons "title" "Confluence Search Results")))
-        (search-buffer nil))
-    (if (> (length space-name) 0)
-        (cf-set-struct-value 'params "spaceKey" space-name))
-    (setq search-results (cf-rpc-execute 'confluence1.search query
-                                         params confluence-search-max-results))
-    (with-temp-buffer
-      (insert "h1. Confluence Search Results for '" query "'\n\n")
-      (dolist (search-result search-results)
-        (insert (format "[%s|%s]\n"
-                        (cf-get-struct-value search-result "title")
-                        (cf-get-struct-value search-result "id")))
-        (let ((excerpt (cf-get-struct-value search-result "excerpt")))
-          (if (> (length excerpt) 0)
-              (insert excerpt "\n")))
-        (insert "\n"))
-      (cf-set-struct-value 'search-page "content" (buffer-string)))
-    (setq search-buffer (get-buffer-create "*Confluence Search Results*"))
-    (with-current-buffer search-buffer
-      (if (eq major-mode 'confluence-mode)
-        (run-hooks 'confluence-before-revert-hook))
-      (cf-insert-page search-page)
-      (setq confluence-browse-function 'cf-search-browse-function)
-      (goto-char (point-min))
-      (toggle-read-only 1))
-    (switch-to-buffer search-buffer)))
+  (cf-show-search-results (cf-rpc-search query space-name)
+                          (list 'search (cf-get-url) query space-name)))
 
 (defun cf-rpc-execute (method-name &rest params)
   "Executes a confluence rpc call, managing the login token and logging in if
@@ -501,6 +495,14 @@ necessary."
   "Executes a confluence 'getPage' rpc call with a page id."
   (cf-rpc-execute 'confluence1.getPage page-id))
 
+(defun cf-rpc-search (query space-name)
+  "Executes a confluence 'search' rpc call."
+  (let ((params (list (cons "type" "page"))))
+    (if (> (length space-name) 0)
+        (cf-set-struct-value 'params "spaceKey" space-name))
+    (cf-rpc-execute 'confluence1.search query
+                    params confluence-search-max-results)))
+
 (defun cf-rpc-save-page (page-struct)
   "Executes a confluence 'storePage' rpc call with a page struct."
   (cf-rpc-execute 'confluence1.storePage page-struct))
@@ -536,22 +538,37 @@ page."
   (run-hooks 'confluence-before-save-hook)
   (cf-insert-page (cf-rpc-save-page 
                    (cf-set-struct-value-copy confluence-page-struct 
-                                             "content" (buffer-string))) t)
+                                             "content" (buffer-string))) 
+                  nil nil t)
   t)
 
 (defun cf-revert-page (&optional arg noconfirm)
   "Reverts the current buffer to the latest version of the current confluence
 page."
-  (if (and confluence-page-id
+  (if (and confluence-load-info
            (or noconfirm
                (yes-or-no-p "Revert Confluence Page ")))
       (progn
         (run-hooks 'confluence-before-revert-hook)
-        (cf-insert-page (cf-rpc-get-page-by-id confluence-page-id)))))
+        (let ((page-type (nth 0 confluence-load-info)))
+          (setq confluence-page-url (nth 1 confluence-load-info))
+          (cond ((eq page-type 'page)
+                 (cf-insert-page (cf-rpc-get-page-by-id 
+                                  (nth 2 confluence-load-info)) 
+                                 confluence-load-info))
+                ((eq page-type 'search)
+                 (cf-insert-search-results 
+                  (cf-rpc-search (nth 2 confluence-load-info) 
+                                 (nth 3 confluence-load-info))
+                  confluence-load-info))
+                (t
+                 (error "Invalid load info")))))))
 
-(defun cf-show-page (full-page)
+(defun cf-show-page (full-page &optional no-push)
   "Does the work of finding or creating a buffer for the given confluence page
 and loading the data if necessary."
+  (if (not no-push)
+      (confluence-push-tag-stack))
   (let* ((page-buf-name (format "%s<%s>"
                                (cf-get-struct-value full-page "title")
                                (cf-get-struct-value full-page "space")))
@@ -564,9 +581,10 @@ and loading the data if necessary."
           (goto-char (point-min))))
     (switch-to-buffer page-buffer)))
 
-(defun cf-insert-page (full-page &optional keep-undo)
+(defun cf-insert-page (full-page &optional load-info browse-function keep-undo)
   "Does the work of loading confluence page data into the current buffer.  If
-KEEP-UNDO, the current undo state will not be erased."
+KEEP-UNDO, the current undo state will not be erased.  The LOAD-INFO is the 
+information necessary to reload the page (if nil, normal page info is used)."
   (let ((old-point (point))
         (was-read-only buffer-read-only))
     (if was-read-only
@@ -576,6 +594,11 @@ KEEP-UNDO, the current undo state will not be erased."
     (setq confluence-page-struct full-page)
     (setq confluence-page-url (cf-get-url))
     (setq confluence-page-id (cf-get-struct-value confluence-page-struct "id"))
+    (setq confluence-load-info 
+          (or load-info
+              (list 'page confluence-page-url confluence-page-id)))
+    (if browse-function
+        (setq confluence-browse-function browse-function))
     (insert (cf-get-struct-value confluence-page-struct "content" ""))
     (cf-set-struct-value 'confluence-page-struct "content" "")
     (set-buffer-modified-p nil)
@@ -586,6 +609,39 @@ KEEP-UNDO, the current undo state will not be erased."
     (goto-char old-point)
     (if was-read-only
         (toggle-read-only 1))))
+
+(defun cf-show-search-results (search-results load-info &optional no-push)
+  "Does the work of finding or creating a buffer for the given confluence
+search results and loading the data into that page."
+  (if (not no-push)
+      (confluence-push-tag-stack))
+  (let ((confluence-input-url (cf-get-url))
+        (search-buffer (get-buffer-create "*Confluence Search Results*")))
+    (with-current-buffer search-buffer
+      (if (not (equal confluence-load-info load-info))
+          (progn
+            (if (eq major-mode 'confluence-mode)
+                (run-hooks 'confluence-before-revert-hook))
+            (cf-insert-search-results search-results load-info)
+            (goto-char (point-min))
+            (toggle-read-only 1))))
+    (switch-to-buffer search-buffer)))
+
+(defun cf-insert-search-results (search-results load-info)
+  "Does the work of loading confluence search data into the current buffer."
+  (let ((search-page (list (cons "title" "Confluence Search Results"))))
+    (with-temp-buffer
+      (insert "h1. Confluence Search Results for '" (nth 2 load-info) "'\n\n")
+      (dolist (search-result search-results)
+        (insert (format "[%s|%s]\n"
+                        (cf-get-struct-value search-result "title")
+                        (cf-get-struct-value search-result "id")))
+        (let ((excerpt (cf-get-struct-value search-result "excerpt")))
+          (if (> (length excerpt) 0)
+              (insert excerpt "\n")))
+        (insert "\n"))
+      (cf-set-struct-value 'search-page "content" (buffer-string)))
+    (cf-insert-page search-page load-info 'cf-search-browse-function)))
 
 (defun cf-search-browse-function (url)
   "Browse function used in search buffers (the links are page ids)."
@@ -631,12 +687,10 @@ buffer."
   (let ((result-list nil))
     (if (and confluence-switch-url (not confluence-input-url))
         (setq confluence-input-url (cf-prompt-url prompt-prefix)))
-    (setq result-list (cons 
-                       (or space-name
-                           (cf-prompt-space-name prompt-prefix)) result-list))
-    (setq result-list (cons 
-                       (or page-name
-                           (cf-prompt-page-name prompt-prefix)) result-list))
+    (push (or space-name
+              (cf-prompt-space-name prompt-prefix)) result-list)
+    (push (or page-name
+              (cf-prompt-page-name prompt-prefix)) result-list)
     result-list))
 
 (defun cf-prompt-page-by-path (prompt-prefix page-name space-name)
@@ -650,8 +704,8 @@ specified as one path).  Suitable for use with `confluence-prompt-page-function'
         (setq result-list (cons page-name (cons space-name result-list)))
       (progn
         (setq page-path (cf-prompt-path prompt-prefix page-name space-name))
-        (setq result-list (cons (cf-get-space-name-from-path page-path) result-list))
-        (setq result-list (cons (cf-get-page-name-from-path page-path) result-list))))
+        (push (cf-get-space-name-from-path page-path) result-list)
+        (push (cf-get-page-name-from-path page-path) result-list)))
     result-list))
 
 (defun cf-prompt-url (&optional prompt-prefix)
@@ -775,13 +829,13 @@ something else."
   "Convert an xml number entity to the appropriate character using the current `confluence-coding-system' (which is
 set by `cf-rpc-execute-internal')."
   (let ((char-list nil))
-    (setq char-list (cons (logand num 255) char-list))
+    (push (logand num 255) char-list)
     (setq num (lsh num -8))
     (while (/= 0 num)
-      (setq char-list (cons (logand num 255) char-list))
+      (push (logand num 255) char-list)
       (setq num (lsh num -8)))
     (while (< (length char-list) confluence-coding-num-bytes)
-      (setq char-list (cons 0 char-list)))
+      (push 0 char-list))
     (decode-coding-string (concat confluence-coding-prefix (apply 'string char-list)) confluence-coding-system t)))
 
 

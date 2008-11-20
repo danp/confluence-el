@@ -650,7 +650,7 @@ parameters."
                 (char-idx xml-rpc-encode-coding-prefix-length))
             (while (> (length encoded-str) char-idx)
               (setq encoded-num (+ (lsh encoded-num 8) (elt encoded-str char-idx)))
-              (setq char-idx (1+ char-idx)))
+              (incf char-idx))
             (replace-match (concat "&#" (number-to-string encoded-num) ";") t t)))
         (setq value (buffer-string))))
   value)

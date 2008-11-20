@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2008  Free Software Foundation, Inc.
 
-;; Author: James Ahlborn <jahlborn@boomi.com>
+;; Author: James Ahlborn
 ;; Author: Kyle Burton <kyle.burton@gmail.com>
 ;; Keywords: confluence, wiki, xmlrpc
 
@@ -863,7 +863,7 @@ set by `cf-rpc-execute-internal')."
    
    ;; code
    '("{{\\([^*]+\\)}}"
-     (1 doxygen-code-face))
+     (1 'doxygen-code-face))
    
    ;; italics/emphasised
    '("[ ]_\\([^_]+\\)_[ ]"

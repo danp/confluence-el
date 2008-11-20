@@ -455,11 +455,8 @@ latest version of that page saved in confluence."
              (not (equal page-name (cf-get-struct-value confluence-page-struct "title"))))
         (progn
           (cf-set-struct-value 'confluence-page-struct "title" page-name)
-          (rename-buffer (format "%s<%s>"
-                                 (cf-get-struct-value confluence-page-struct "title")
-                                 (cf-get-struct-value confluence-page-struct "space")))
-          (set-buffer-modified-p t)
-          ))))
+          (cf-update-buffer-name)
+          (set-buffer-modified-p t)))))
 
 (defun confluence-delete-page (&optional arg)
   "Deletes the current confluence page.  Asks first, unless ARG is given."
@@ -561,12 +558,12 @@ updating the saved metadata to the latest version."
           (get-buffer-create (format "%s.~%s~" (buffer-name cur-buf) (cf-get-struct-value rev-page "version" 0))))
     (with-current-buffer rev-buf
       (cf-insert-page rev-page)
-      (toggle-read-only 1)
-      )
+      (toggle-read-only 1))
     (if update-cur-version
         (progn
           (setq confluence-page-struct 
-                (cf-set-struct-value-copy rev-page "content" ""))))
+                (cf-set-struct-value-copy rev-page "content" ""))
+          (cf-update-buffer-name)))
     (ediff-buffers cur-buf rev-buf nil 'confluence-diff)))
 
 (defun cf-save-page ()
@@ -595,7 +592,8 @@ page."
         (cf-destructure-load-info confluence-load-info
           (setq confluence-page-url confluence-input-url)
           (cond ((eq page-type 'page)
-                 (cf-insert-page (cf-rpc-get-page-by-id page-id-or-query) confluence-load-info))
+                 (cf-insert-page (cf-rpc-get-page-by-id page-id-or-query) confluence-load-info)
+                 (cf-update-buffer-name))
                 ((eq page-type 'search)
                  (cf-insert-search-results 
                   (cf-rpc-search page-id-or-query space-name)
@@ -608,9 +606,9 @@ page."
 and loading the data if necessary."
   (if (not no-push)
       (confluence-push-tag-stack))
-  (let* ((page-buf-name (format "%s<%s>"
-                               (cf-get-struct-value full-page "title")
-                               (cf-get-struct-value full-page "space")))
+  (let* ((page-buf-name (cf-format-buffer-name
+                         (cf-get-struct-value full-page "title")
+                         (cf-get-struct-value full-page "space")))
          (page-buffer (get-buffer page-buf-name)))
     (if (not page-buffer)
         (progn
@@ -806,6 +804,18 @@ given STRUCT-VAR."
     (if cur-assoc
         (setcdr cur-assoc value)
       (add-to-list struct-var (cons key value) t))))
+
+(defun cf-update-buffer-name ()
+  "Sets the buffer name based on the buffer info if it is a page buffer."
+  (let ((page-name (cf-get-struct-value confluence-page-struct "title"))
+        (page-space (cf-get-struct-value confluence-page-struct "space")))
+    (if (and (> (length page-name) 0)
+             (> (length space-name) 0))
+        (rename-buffer (cf-format-buffer-name page-name space-name)))))
+
+(defun cf-format-buffer-name (page-name space-name)
+  "Formats the name of the buffer given the page and space name."
+  (format "%s<%s>" page-name space-name))
 
 (defun cf-get-url ()
   "Gets the confluence url to use for the current operation."

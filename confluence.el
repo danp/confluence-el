@@ -379,6 +379,25 @@ page-type is 'search.
        ,entry
      ,@body))
 
+(defmacro cf-destructure-load-info (load-info &rest body)
+  "Destructure a load-info tuple.  NB this is not a hygenic
+macro, it intentionally binds named variables that match the
+structure of the stack entry.  The structure and the variable
+bindings are:
+
+  (page-type confluence-input-url page-id-or-query &optional space-name)
+
+Each load-info can be either the result of a search query (in
+which case page-type will be the symbol 'search or a page
+visitation (and page-type will be 'page).  page-id-or-query will
+be either a page-id or a query - depending on the type of stack
+entry (page or query).  space-name will be populated when
+page-type is 'search.
+"
+  `(destructuring-bind
+       (page-type confluence-input-url page-id-or-query &optional space-name)
+       ,load-info
+     ,@body))
 
 (defun confluence-pop-tag-stack ()
   "Returns to the last previously visited space/page by popping
@@ -442,18 +461,21 @@ latest version of that page saved in confluence."
           (set-buffer-modified-p t)
           ))))
 
-(defun confluence-delete-page ()
-  "Deletes the current confluence page."
-  (interactive)
-  (if (not confluence-page-id)
-      (error "Could not delete Confluence page %s, missing page id"
-             (buffer-name)))
-  (cf-rpc-execute 'confluence1.removePage confluence-page-id)
-  (while (assoc confluence-load-info confluence-tag-stack)
-    (setq confluence-tag-stack
-          (remove (assoc confluence-load-info confluence-tag-stack)
-                  confluence-tag-stack)))
-  (kill-buffer (current-buffer)))
+(defun confluence-delete-page (&optional arg)
+  "Deletes the current confluence page.  Asks first, unless ARG is given."
+  (interactive "P")
+  (if (or arg
+          (yes-or-no-p  "Really Delete Confluence Page? "))
+      (progn
+        (if (not confluence-page-id)
+            (error "Could not delete Confluence page %s, missing page id"
+                   (buffer-name)))
+        (cf-rpc-execute 'confluence1.removePage confluence-page-id)
+        (while (assoc confluence-load-info confluence-tag-stack)
+          (setq confluence-tag-stack
+                (remove (assoc confluence-load-info confluence-tag-stack)
+                        confluence-tag-stack)))
+        (kill-buffer (current-buffer)))))
 
 (defun confluence-search-in-space (&optional query)
   "Runs a confluence search for QUERY, restricting the results to the space of
@@ -566,20 +588,17 @@ page."
 page."
   (if (and confluence-load-info
            (or noconfirm
-               (yes-or-no-p "Revert Confluence Page ")))
+               (yes-or-no-p "Revert Confluence Page? ")))
       (progn
         (run-hooks 'confluence-before-revert-hook)
         ;; NOTE: a destrucutre could work here for the load-info as well...
-        (let ((page-type (nth 0 confluence-load-info)))
-          (setq confluence-page-url (nth 1 confluence-load-info))
+        (cf-destructure-load-info confluence-load-info
+          (setq confluence-page-url confluence-input-url)
           (cond ((eq page-type 'page)
-                 (cf-insert-page (cf-rpc-get-page-by-id 
-                                  (nth 2 confluence-load-info)) 
-                                 confluence-load-info))
+                 (cf-insert-page (cf-rpc-get-page-by-id page-id-or-query) confluence-load-info))
                 ((eq page-type 'search)
                  (cf-insert-search-results 
-                  (cf-rpc-search (nth 2 confluence-load-info) 
-                                 (nth 3 confluence-load-info))
+                  (cf-rpc-search page-id-or-query space-name)
                   confluence-load-info))
                 (t
                  (error "Invalid load info")))))))
@@ -683,7 +702,7 @@ search results and loading the data into that page."
   "Gets a confluence parent page id, optionally using the one in the current
 buffer."
   (if (and confluence-page-id
-           (yes-or-no-p "Use current page for parent "))
+           (yes-or-no-p "Use current page for parent? "))
       confluence-page-id
     (let ((parent-space-name (or (cf-get-struct-value confluence-page-struct "space") nil))
           (parent-page-name nil))

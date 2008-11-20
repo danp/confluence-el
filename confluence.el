@@ -3,6 +3,7 @@
 ;; Copyright (C) 2008  Free Software Foundation, Inc.
 
 ;; Author: James Ahlborn <jahlborn@boomi.com>
+;; Author: Kyle Burton <kyle.burton@gmail.com>
 ;; Keywords: confluence, wiki, xmlrpc
 
 ;; This file is free software; you can redistribute it and/or modify

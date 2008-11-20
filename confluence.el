@@ -594,7 +594,6 @@ page."
                (yes-or-no-p "Revert Confluence Page? ")))
       (progn
         (run-hooks 'confluence-before-revert-hook)
-        ;; NOTE: a destrucutre could work here for the load-info as well...
         (cf-destructure-load-info confluence-load-info
           (setq confluence-page-url confluence-input-url)
           (cond ((eq page-type 'page)

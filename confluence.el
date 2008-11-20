@@ -359,23 +359,41 @@ PAGE-NAME and loads it into a new buffer."
         (confluence-input-url nil))
     (confluence-create-page)))
 
+(defmacro cf-destructure-tags-stack-entry (entry &rest body)
+  "Destructure a tags-stack tuple.  NB this is not a hygenic
+macro, it intentionally binds named variables that match the
+structure of the stack entry.  The structure and the variable
+bindings are:
+
+  ((page-type confluence-input-url page-id-or-query &optional space-name) old-point)
+
+Each stack entry can be either the result of a search query (in
+which case page-type will be the symbol 'search or a page
+visitation (and page-type will be 'page).  page-id-or-query will
+be either a page-id or a query - depending on the type of stack
+entry (page or query).  space-name will be populated when
+page-type is 'search.
+"
+  `(destructuring-bind
+       ((page-type confluence-input-url page-id-or-query &optional space-name) old-point)
+       ,entry
+     ,@body))
+
+
 (defun confluence-pop-tag-stack ()
   "Returns to the last previously visited space/page by popping
 the tags stack."
   (interactive)
   (if (null confluence-tag-stack)
       (message "Stack is empty...")
-    (let* ((stack-info (pop confluence-tag-stack))
-           (load-info (nth 0 stack-info))
-           (old-point (nth 1 stack-info))
-           (page-type (nth 0 load-info))
-           (confluence-input-url (nth 1 load-info)))
+    (cf-destructure-tags-stack-entry
+        (pop confluence-tag-stack)
       (cond 
        ((eq page-type 'page)
-        (cf-show-page (cf-rpc-get-page-by-id (nth 2 load-info)) t))
+        (cf-show-page (cf-rpc-get-page-by-id page-id-or-query) t))
        ((eq page-type 'search)
         (cf-show-search-results 
-         (cf-rpc-search (nth 2 load-info) (nth 3 load-info))
+         (cf-rpc-search page-id-or-query space-name)
          load-info t))
        (t
         (error "Invalid stack info")))
@@ -551,6 +569,7 @@ page."
                (yes-or-no-p "Revert Confluence Page ")))
       (progn
         (run-hooks 'confluence-before-revert-hook)
+        ;; NOTE: a destrucutre could work here for the load-info as well...
         (let ((page-type (nth 0 confluence-load-info)))
           (setq confluence-page-url (nth 1 confluence-load-info))
           (cond ((eq page-type 'page)

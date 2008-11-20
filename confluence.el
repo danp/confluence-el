@@ -3,7 +3,7 @@
 ;; Copyright (C) 2008  Free Software Foundation, Inc.
 
 ;; Author: James Ahlborn <jahlborn@boomi.com>
-;; Keywords: confluence, wiki, jscheme, xmlrpc
+;; Keywords: confluence, wiki, xmlrpc
 
 ;; This file is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by

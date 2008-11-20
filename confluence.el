@@ -168,6 +168,12 @@
 (require 'thingatpt)
 (require 'browse-url)
 
+(defmacro confluence-coding-system-base (coding-system)
+  "Safely returns the base of the given CODING-SYSTEM (or the given value if not found)."
+  `(if (coding-system-p ,coding-system)
+       (coding-system-base ,coding-system)
+     ,coding-system))
+
 (defgroup confluence nil
   "Support for editing confluence wikis."
   :prefix "confluence-")
@@ -206,13 +212,13 @@ configured here)."
   :group 'confluence
   :type '(alist  :key-type string :value-type coding-system))
 
-(defvar confluence-coding-prefix-alist (list (cons 'utf-16-be "\376\377")
-                                             (cons 'utf-16-le "\377\376"))
+(defvar confluence-coding-prefix-alist (list (cons (confluence-coding-system-base 'utf-16-be) "\376\377")
+                                             (cons (confluence-coding-system-base 'utf-16-le) "\377\376"))
   "Extra prefix necessary when decoding a string in a given coding system (not necessary for all coding systems).  The
 empty string is used if nothing is defined here, which works for most coding systems.")
 
-(defvar confluence-coding-bytes-per-char-alist (list (cons 'utf-16-be 2)
-                                                     (cons 'utf-16-le 2))
+(defvar confluence-coding-bytes-per-char-alist (list (cons (confluence-coding-system-base 'utf-16-be) 2)
+                                                     (cons (confluence-coding-system-base 'utf-16-le) 2))
   "Number of bytes per character for the coding system.  Assumed be be 1 or variable if not defined here, which works
 for most coding systems.")
 
@@ -508,10 +514,11 @@ necessary."
   (let* ((url-http-version "1.0")
          (url-http-attempt-keepalives nil)
          (page-url (cf-get-url))
-         (confluence-coding-system (cf-get-struct-value confluence-coding-alist page-url 'utf-8))
-         (confluence-coding-prefix (cf-get-struct-value confluence-coding-prefix-alist confluence-coding-system ""))
+         (tmp-coding-system (coding-system-base (cf-get-struct-value confluence-coding-alist page-url 'utf-8)))
+         (confluence-coding-system (coding-system-change-eol-conversion tmp-coding-system 'unix))
+         (confluence-coding-prefix (cf-get-struct-value confluence-coding-prefix-alist tmp-coding-system ""))
          (confluence-coding-num-bytes (cf-get-struct-value confluence-coding-bytes-per-char-alist
-                                                           confluence-coding-system 1))
+                                                           tmp-coding-system 1))
          (xml-rpc-encode-coding-system confluence-coding-system)
          (xml-rpc-encode-coding-prefix-length (length confluence-coding-prefix)))
     (if (not page-url)
@@ -522,8 +529,7 @@ necessary."
        (if xml-rpc-fault-string
            (setq xml-rpc-fault-string (cf-url-decode-entities-in-value 
                                        xml-rpc-fault-string)))
-       (error (cf-url-decode-entities-in-value (error-message-string err)))))
-    ))
+       (error (cf-url-decode-entities-in-value (error-message-string err)))))))
 
 (defun cf-rpc-get-page-by-name (space-name page-name)
   "Executes a confluence 'getPage' rpc call with space and page names."
@@ -886,7 +892,6 @@ set by `cf-rpc-execute-internal')."
     (while (< (length char-list) confluence-coding-num-bytes)
       (push 0 char-list))
     (decode-coding-string (concat confluence-coding-prefix (apply 'string char-list)) confluence-coding-system t)))
-
 
 (defconst confluence-keywords
   (list

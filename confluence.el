@@ -872,6 +872,11 @@ given STRUCT-VAR."
 
 (defun cf-get-url ()
   "Gets the confluence url to use for the current operation."
+  ;; get the relevant url, by precedence:
+  ;; - input url - optionally defined by current operation
+  ;; - page url - if current buffer is confluence buffer, this will be the url
+  ;;              from which it was loaded
+  ;; - confluence-url user configured default
   (or confluence-input-url confluence-page-url confluence-url))
 
 (defun cf-get-default-space ()

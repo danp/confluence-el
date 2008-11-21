@@ -979,21 +979,18 @@ set by `cf-rpc-execute-internal')."
 (defconst confluence-font-lock-keywords-1
   (list
   
-   '("{\\([^{}]+\\)}"
-     (1 'font-lock-constant-face))
+   '("{\\([^{}]\\(?:[^{}]+[:|]title=\\([^}|]+\\)\\)?[^{}]*\\)}"
+     (1 'font-lock-constant-face)
+     (2 'bold append t))
   
-   '("{warning\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){warning}"
-     (1 'bold append t)
-     (2 'font-lock-warning-face prepend))
-   '("{note\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){note}"
-     (1 'bold append t)
-     (2 'font-lock-minor-warning-face prepend))
-   '("{info\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){info}"
-     (1 'bold append t)
-     (2 'font-lock-doc-face prepend))
-   '("{tip\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){tip}"
-     (1 'bold append t)
-     (2 'font-lock-comment-face prepend))
+   '("{warning\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){warning}"
+     (1 'font-lock-warning-face prepend))
+   '("{note\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){note}"
+     (1 'font-lock-minor-warning-face prepend))
+   '("{info\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){info}"
+     (1 'font-lock-doc-face prepend))
+   '("{tip\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){tip}"
+     (1 'font-lock-comment-face prepend))
   
    ;; bold
    '("[ ][*]\\([^*]+\\)[*][ ]"
@@ -1056,17 +1053,14 @@ set by `cf-rpc-execute-internal')."
           (list
   
            ;; code/preformatted blocks
-           '("{noformat\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){noformat}"
-             (1 'bold append t)
-             (2 'confluence-code-face t))
-           '("{code\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){code}"
-             (1 'bold append t)
-             (2 'confluence-code-face t))
+           '("{noformat\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){noformat}"
+             (1 'confluence-code-face t))
+           '("{code\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){code}"
+             (1 'confluence-code-face t))
 
            ;; panels
-           '("{panel\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(?:\\s-*[\r]?[\n]\\)?\\(\\(.\\|[\n]\\)*?\\){panel}"
-             (1 'bold append t)
-             (2 'confluence-panel-face t))  
+           '("{panel\\(?:[:][^}]*\\)?}\\(?:\\s-*[\r]?[\n]\\)?\\(\\(.\\|[\n]\\)*?\\){panel}"
+             (1 'confluence-panel-face t))  
            ))
   "Gaudy level highlighting for confluence mode.")
 

@@ -1060,7 +1060,7 @@ set by `cf-rpc-execute-internal')."
 
            ;; panels
            '("{panel\\(?:[:][^}]*\\)?}\\(?:\\s-*[\r]?[\n]\\)?\\(\\(.\\|[\n]\\)*?\\){panel}"
-             (1 'confluence-panel-face t))  
+             (1 'confluence-panel-face append))
            ))
   "Gaudy level highlighting for confluence mode.")
 

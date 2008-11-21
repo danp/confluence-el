@@ -33,7 +33,7 @@
 ;; INSTALLATION 
 ;;
 ;; You must set confluence-url in your .emacs file before using the
-;; functions in this moudule.
+;; functions in this module.
 ;;
 ;; Some examples:
 ;;
@@ -51,22 +51,19 @@
 ;;
 ;; It is often convienient to bind this to a global key \C-xwf in your .emacs file:
 ;;   
-;;    (global-set-key "\C-xwf")
+;;    (global-set-key "\C-xwf" 'confluence-get-page)
+;;
+;; Once you have opened a page, made changes, simply saving the page
+;; ("\C-x\C-s") will push the changes back to the wiki.
+;;
+;; To view the changes in your page versus what is in the wiki, type
+;; \C-xw=, or run M-x confluence-ediff-current-page.
 ;;
 ;; Also, if you want keybindings for confluence-mode, you can put the
 ;; following in your .emacs file:
 ;;
-;;    (local-set-key "\C-xw" confluence-prefix-map)
-;;
-;; Once you have opened a page, made changes, simply saving the page
-;; ("\C-x\C-f") will push the changes back to the wiki.
-;;
-;; To view the chagnes in your page versus what is in the wiki, type
-;; \C-xw=, or run M-x confluence-ediff-current-page.
-;;
 ;; (add-hook 'confluence-mode-hook
 ;;   (local-set-key "\C-xw" confluence-prefix-map)
-;;   (local-set-key [(control f6)] 'confluence-ediff-merge-current-page)
 ;;   (local-set-key "\C-j" 'confluence-newline-and-indent))
 ;;
 ;; LONGLINES
@@ -80,7 +77,7 @@
 ;; with 'soft' linebreaks - which are inserted automatically, or via
 ;; M-q.  This makes it much more pleasant to work with large
 ;; paragraphs of text in the Confluence markup without introducing
-;; unwated paragraphs.
+;; unwanted paragraphs.
 ;;
 ;; See below for more advice on using LongLines and confluence-mode.
 ;;
@@ -148,16 +145,6 @@
 ;;                     (if (buffer-live-p tmp-buf)
 ;;                         (with-current-buffer tmp-buf
 ;;                           (longlines-restore))))))))
-;;
-;; ;; keybindings (change to suit)
-;;
-;; ;; open confluence page
-;; (global-set-key "\C-xwf" 'confluence-get-page)
-;;
-;; ;; setup confluence mode
-;; (add-hook 'confluence-mode-hook
-;;           '(lambda ()
-;;              (local-set-key "\C-xw" confluence-prefix-map)))
 ;;
 ;; 
 

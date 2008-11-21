@@ -648,8 +648,6 @@ information necessary to reload the page (if nil, normal page info is used)."
         (was-read-only buffer-read-only))
     (if was-read-only
         (toggle-read-only))
-    (widen)
-    (erase-buffer)
     ;; save/update various page metadata
     (setq confluence-page-struct full-page)
     (setq confluence-page-url (cf-get-url))
@@ -659,8 +657,13 @@ information necessary to reload the page (if nil, normal page info is used)."
               (list 'page confluence-page-url confluence-page-id)))
     (if browse-function
         (setq confluence-browse-function browse-function))
-    ;; actually insert the new page contents
-    (insert (cf-get-struct-value confluence-page-struct "content" ""))
+    ;; don't save the buffer edits on the undo list (we might keep it)
+    (let ((buffer-undo-list))
+      (widen)
+      (erase-buffer)
+      ;; actually insert the new page contents
+      (insert (cf-get-struct-value confluence-page-struct "content" ""))
+      (goto-char old-point))
     ;; remove the contents from the page metadata
     (cf-set-struct-value 'confluence-page-struct "content" "")
     ;; restore/setup buffer state
@@ -669,7 +672,6 @@ information necessary to reload the page (if nil, normal page info is used)."
         (eq buffer-undo-list t)
         (setq buffer-undo-list nil))
     (confluence-mode)
-    (goto-char old-point)
     (if was-read-only
         (toggle-read-only 1))))
 
@@ -949,30 +951,57 @@ set by `cf-rpc-execute-internal')."
     ;; require a prefix, so slap that on here as well)
     (decode-coding-string (concat confluence-coding-prefix (apply 'string char-list)) confluence-coding-system t)))
 
-(defconst confluence-keywords
+
+;;;;;;;;;;;;;;;;;;;
+;;; Confluence mode
+
+(defvar confluence-code-face 'confluence-code-face)
+
+(defface confluence-code-face
+  '((((class color) (background dark))
+     (:foreground "dim gray" :bold t))
+    (((class color) (background light))
+     (:foreground "dim gray"))
+    (t (:bold t)))
+  "Font Lock Mode face used for code in confluence pages.")
+
+(defvar confluence-panel-face 'confluence-panel-face)
+
+(defface confluence-panel-face
+  '((((class color) (background dark))
+     (:background "dim gray"))
+    (((class color) (background light))
+     (:background "dim gray"))
+    (t nil))
+  "Font Lock Mode face used for panel in confluence pages.")
+
+
+(defconst confluence-font-lock-keywords-1
   (list
   
-   '("{\\([^}]+\\)}"
+   '("{\\([^{}]+\\)}"
      (1 'font-lock-constant-face))
   
-   '("{warning\\(?:[:][^}]*\\)?}\\(.*?\\){warning}"
-     (1 'font-lock-warning-face prepend))
-   '("{note\\(?:[:][^}]*\\)?}\\(.*?\\){note}"
-     (1 'font-lock-minor-warning-face prepend))
-   '("{info\\(?:[:][^}]*\\)?}\\(.*?\\){info}"
-     (1 'font-lock-doc-face prepend))
-   '("{tip\\(?:[:][^}]*\\)?}\\(.*?\\){tip}"
-     (1 'font-lock-comment-face prepend))
-   '("{noformat\\(?:[:][^}]*\\)?}\\(.*?\\){noformat}"
-     (1 'font-lock-comment-face prepend))
+   '("{warning\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){warning}"
+     (1 'bold append t)
+     (2 'font-lock-warning-face prepend))
+   '("{note\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){note}"
+     (1 'bold append t)
+     (2 'font-lock-minor-warning-face prepend))
+   '("{info\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){info}"
+     (1 'bold append t)
+     (2 'font-lock-doc-face prepend))
+   '("{tip\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){tip}"
+     (1 'bold append t)
+     (2 'font-lock-comment-face prepend))
   
    ;; bold
    '("[ ][*]\\([^*]+\\)[*][ ]"
      (1 'bold))
    
    ;; code
-   '("{{\\([^*]+\\)}}"
-     (1 'doxygen-code-face))
+   '("{{\\([^}]+\\)}}"
+     (1 'confluence-code-face t))
    
    ;; italics/emphasised
    '("[ ]_\\([^_]+\\)_[ ]"
@@ -1020,7 +1049,30 @@ set by `cf-rpc-execute-internal')."
      (1 'font-lock-constant-face))
    )
   
-  )
+  "Basic level highlighting for confluence mode.")
+
+(defconst confluence-font-lock-keywords-2
+  (append confluence-font-lock-keywords-1
+          (list
+  
+           ;; code/preformatted blocks
+           '("{noformat\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){noformat}"
+             (1 'bold append t)
+             (2 'confluence-code-face t))
+           '("{code\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){code}"
+             (1 'bold append t)
+             (2 'confluence-code-face t))
+
+           ;; panels
+           '("{panel\\(?:[:]\\(?:title=\\([^}|]+\\)\\)?[^}]*\\)?}\\(?:\\s-*[\r]?[\n]\\)?\\(\\(.\\|[\n]\\)*?\\){panel}"
+             (1 'bold append t)
+             (2 'confluence-panel-face t))  
+           ))
+  "Gaudy level highlighting for confluence mode.")
+
+(defvar confluence-font-lock-keywords confluence-font-lock-keywords-1
+  "Default expressions to highlight in Confluence modes.")
+
 
 (define-derived-mode confluence-mode text-mode "Confluence"
   "Set major mode for editing Confluence Wiki pages."
@@ -1034,7 +1086,9 @@ set by `cf-rpc-execute-internal')."
   ;; we set this to some nonsense so save-buffer works
   (setq buffer-file-name (expand-file-name (concat "." (buffer-name)) "~/"))
   (setq font-lock-defaults
-        '(confluence-keywords nil nil nil nil))
+        '((confluence-font-lock-keywords confluence-font-lock-keywords-1
+                                         confluence-font-lock-keywords-2)
+          nil nil nil nil))
 )
 
 (defvar confluence-prefix-map

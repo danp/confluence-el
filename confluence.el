@@ -335,9 +335,9 @@ switches to it."
   "Creates a new confluence page for the given SPACE-NAME and
 PAGE-NAME and loads it into a new buffer."
   (interactive)
+  (cf-prompt-page-info "New " 'page-name 'space-name)
   (let ((new-page (list (cons "content" "")))
-        (parent-page-id (cf-get-parent-page-id t)))
-    (cf-prompt-page-info nil 'page-name 'space-name)
+        (parent-page-id (cf-get-parent-page-id t space-name)))
     (cf-set-struct-value 'new-page "title" page-name)
     (cf-set-struct-value 'new-page "space" space-name)
     (if parent-page-id
@@ -457,7 +457,7 @@ latest version of that page saved in confluence."
   "Deletes the current confluence page.  Asks first, unless ARG is given."
   (interactive "P")
   (if (or arg
-          (yes-or-no-p  "Really Delete Confluence Page? "))
+          (yes-or-no-p  "Really delete confluence page? "))
       (progn
         (if (not confluence-page-id)
             (error "Could not delete Confluence page %s, missing page id"
@@ -490,8 +490,7 @@ the given SPACE-NAME."
   "With ARG, prompts for the confluence url to use for the search call (based
 on `confluence-default-space-alist')."
   (interactive "P")
-  (let ((confluence-switch-url arg)
-        (confluence-input-url nil))
+  (let ((confluence-input-url (cf-prompt-url nil)))
     (confluence-search)))
 
 (defun cf-rpc-execute (method-name &rest params)
@@ -601,13 +600,11 @@ page."
 page."
   (if (and confluence-load-info
            (or noconfirm
-               (yes-or-no-p "Revert Confluence Page? ")))
+               (yes-or-no-p "Revert confluence page? ")))
       (progn
-        (run-hooks 'confluence-before-revert-hook)
         ;; use the load-info to reload the page, so we can reload normal pages
         ;; and search pages
         (cf-destructure-load-info confluence-load-info
-          (setq confluence-page-url confluence-input-url)
           (cond 
            ;; reload normal page data
            ((eq page-type 'page)
@@ -626,24 +623,31 @@ page."
 and loading the data if necessary."
   (if (not no-push)
       (confluence-push-tag-stack))
-  (let* ((page-buf-name (cf-format-buffer-name
-                         (cf-get-struct-value full-page "title")
-                         (cf-get-struct-value full-page "space")))
-         (page-buffer (get-buffer page-buf-name)))
+  ;; note, we save the current url as confluence-input-url in case the buffer
+  ;; has a different value locally from a previous searcg (this value will
+  ;; override it)
+  (let* ((confluence-input-url (cf-get-url))
+         (load-info (list 'page confluence-input-url (cf-get-struct-value full-page "id")))
+         (page-buffer (get-buffer-create (cf-format-buffer-name
+                                          (cf-get-struct-value full-page "title")
+                                          (cf-get-struct-value full-page "space")))))
     ;; only insert the data if the buffer is new, otherwise just show current
     ;; data
-    (if (not page-buffer)
-        (progn
-          (setq page-buffer (get-buffer-create page-buf-name))
-          (set-buffer page-buffer)
-          (cf-insert-page full-page)
-          (goto-char (point-min))))
+    (with-current-buffer page-buffer
+      (if (not (equal confluence-load-info load-info))
+          (progn
+            (cf-insert-page full-page load-info)
+            (goto-char (point-min)))))
     (switch-to-buffer page-buffer)))
 
 (defun cf-insert-page (full-page &optional load-info browse-function keep-undo)
   "Does the work of loading confluence page data into the current buffer.  If
 KEEP-UNDO, the current undo state will not be erased.  The LOAD-INFO is the 
 information necessary to reload the page (if nil, normal page info is used)."
+  ;; if this is an old buffer (already has confluence-mode), run
+  ;; revert hooks before writing new data
+  (if (eq major-mode 'confluence-mode)
+      (run-hooks 'confluence-before-revert-hook))
   (let ((old-point (point))
         (was-read-only buffer-read-only))
     (if was-read-only
@@ -658,7 +662,8 @@ information necessary to reload the page (if nil, normal page info is used)."
     (if browse-function
         (setq confluence-browse-function browse-function))
     ;; don't save the buffer edits on the undo list (we might keep it)
-    (let ((buffer-undo-list))
+    (let ((buffer-undo-list t)
+          (inhibit-read-only t))
       (widen)
       (erase-buffer)
       ;; actually insert the new page contents
@@ -690,10 +695,6 @@ search results and loading the data into that page."
       ;; data
       (if (not (equal confluence-load-info load-info))
           (progn
-            ;; if this is an old buffer (already has confluence-mode), run
-            ;; revert hooks before writing new data
-            (if (eq major-mode 'confluence-mode)
-                (run-hooks 'confluence-before-revert-hook))
             (cf-insert-search-results search-results load-info)
             (goto-char (point-min))
             (toggle-read-only 1))))  ;; always make search results read-only
@@ -737,7 +738,7 @@ search results and loading the data into that page."
         (setq page-name (match-string 1 page-name)))
     (confluence-get-page page-name space-name)))
 
-(defun cf-get-parent-page-id (try-current-page)
+(defun cf-get-parent-page-id (try-current-page &optional space-name)
   "Gets a confluence parent page id, optionally using the one in the current
 buffer."
   ;; if current page is a confluence page and try-current-page, ask if use
@@ -747,7 +748,7 @@ buffer."
            (yes-or-no-p "Use current page for parent? "))
       confluence-page-id
     ;; otherwise, prompt for parent page
-    (let ((parent-space-name (or (cf-get-struct-value confluence-page-struct "space") nil))
+    (let ((parent-space-name (or space-name (cf-get-struct-value confluence-page-struct "space")))
           (parent-page-name nil))
       (cf-prompt-page-info "Parent " 'parent-page-name 'parent-space-name)
       (if (and (> (length parent-space-name) 0)
@@ -969,9 +970,9 @@ set by `cf-rpc-execute-internal')."
 
 (defface confluence-panel-face
   '((((class color) (background dark))
-     (:background "dim gray"))
+     (:background "LightGray"))
     (((class color) (background light))
-     (:background "dim gray"))
+     (:background "LightGray"))
     (t nil))
   "Font Lock Mode face used for panel in confluence pages.")
 

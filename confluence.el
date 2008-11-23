@@ -745,7 +745,7 @@ buffer."
   ;; wants to use it as the parent page
   (if (and try-current-page
            confluence-page-id
-           (yes-or-no-p "Use current page for parent? "))
+           (yes-or-no-p "Use current confluence page for parent? "))
       confluence-page-id
     ;; otherwise, prompt for parent page
     (let ((parent-space-name (or space-name (cf-get-struct-value confluence-page-struct "space")))

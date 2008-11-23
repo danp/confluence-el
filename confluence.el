@@ -277,7 +277,7 @@ re-login to the current url."
           (setq cur-token
                 (cf-rpc-execute-internal 
                  'confluence1.login
-                 (read-string "Confluence Username: " user-login-name nil nil t)
+                 (read-string (format "Confluence Username [%s]: " user-login-name) nil nil user-login-name t)
                  (read-passwd "Confluence Password: ")))
           (cf-set-struct-value 'confluence-login-token-alist
                                (cf-get-url) cur-token)
@@ -445,7 +445,9 @@ latest version of that page saved in confluence."
 (defun confluence-rename-page ()
   "Changes the name (title) of the current confluence page."
   (interactive)
-  (let ((page-name (cf-prompt-page-name "New ")))
+  (let ((page-name (cf-prompt-page-name 
+                    (cf-get-struct-value confluence-page-struct "space") 
+                    "New ")))
     (if (and (> (length page-name) 0)
              (not (equal page-name (cf-get-struct-value confluence-page-struct "title"))))
         (progn
@@ -772,10 +774,11 @@ buffer."
     (if (and confluence-switch-url (not confluence-input-url))
         (setq confluence-input-url (cf-prompt-url prompt-prefix)))
     ;; now, prompt for space and page if not already defined by caller
-    (push (or space-name
-              (cf-prompt-space-name prompt-prefix)) result-list)
+    (if (not space-name)
+        (setq space-name (cf-prompt-space-name prompt-prefix)))
+    (push space-name result-list)
     (push (or page-name
-              (cf-prompt-page-name prompt-prefix)) result-list)
+              (cf-prompt-page-name space-name prompt-prefix)) result-list)
     result-list))
 
 (defun cf-prompt-page-by-path (prompt-prefix page-name space-name)
@@ -808,19 +811,37 @@ specified as one path).  Suitable for use with `confluence-prompt-page-function'
          (space-prompt (if def-space
                            (format "Confluence Space [%s]: " def-space)
                          "Confluence Space: ")))
-    (read-string (concat (or prompt-prefix "") space-prompt) 
-                 (cf-get-struct-value confluence-page-struct "space") 
-                 'confluence-space-history def-space t)))
+    (cf-read-string prompt-prefix space-prompt 'confluence-space-history
+                    (cf-get-url) 
+                    (cf-get-struct-value confluence-page-struct "space") 
+                    def-space)))
 
-(defun cf-prompt-page-name (&optional prompt-prefix)
+(defun cf-prompt-page-name (space-name &optional prompt-prefix)
   "Prompts for a confluence page name."
-  (read-string (concat (or prompt-prefix "") "Confluence Page Name: ") nil 'confluence-page-history nil t))
+  (cf-read-string prompt-prefix "Confluence Page Name: " 
+                  'confluence-page-history (cons space-name (cf-get-url))))
 
 (defun cf-prompt-path (prompt-prefix page-name space-name)
   "Prompts for a confluence page path."
-  (read-string (concat (or prompt-prefix "") "Confluence Space/PageName: ")
-               (if space-name (concat space-name "/") nil)
-               'confluence-path-history nil t))
+  (cf-read-string prompt-prefix "Confluence Space/PageName: "
+                  'confluence-path-history (cf-get-url)
+                  (if space-name (concat space-name "/") nil)))
+
+(defun cf-read-string (prompt-prefix prompt hist-alist-var hist-key 
+                       &optional init-val def-val)
+  "Prompt for a string using the given prompt info and history alist."
+  ;; we actually use the history var as an alist of history vars so we can
+  ;; have different histories in different contexts (e.g. separate space
+  ;; histories for each url and separate page histories for each space)
+  (let ((hist-list (cf-get-struct-value (symbol-value hist-alist-var) h
+                                        ist-key))
+        (result-string nil))
+    (setq result-string
+          (read-string (concat (or prompt-prefix "") prompt) init-val
+                       'hist-list def-val t))
+    ;; put the new history list back into the alist
+    (cf-set-struct-value hist-alist-var hist-key hist-list)
+    result-string))
 
 (defun cf-get-space-name-from-path (page-path)
   "Parses the space name from the given PAGE-PATH."

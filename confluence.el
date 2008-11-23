@@ -277,8 +277,8 @@ re-login to the current url."
           (setq cur-token
                 (cf-rpc-execute-internal 
                  'confluence1.login
-                 (read-string "Username: " user-login-name nil nil t)
-                 (read-passwd "Password: ")))
+                 (read-string "Confluence Username: " user-login-name nil nil t)
+                 (read-passwd "Confluence Password: ")))
           (cf-set-struct-value 'confluence-login-token-alist
                                (cf-get-url) cur-token)
           ))
@@ -481,7 +481,7 @@ the current buffer."
 the given SPACE-NAME."
   (interactive)
   (or query
-      (setq query (read-string "Query: " nil 
+      (setq query (read-string "Confluence Query: " nil 
                                'confluence-search-history nil t)))
   (cf-show-search-results (cf-rpc-search query space-name)
                           (list 'search (cf-get-url) query space-name)))
@@ -800,25 +800,25 @@ specified as one path).  Suitable for use with `confluence-prompt-page-function'
   "Prompts for a confluence url."
   (let ((temp-url-hist (and confluence-default-space-alist
                             (mapcar 'car confluence-default-space-alist))))
-    (read-string (concat (or prompt-prefix "") "Url: ") nil 'temp-url-hist nil t)))
+    (read-string (concat (or prompt-prefix "") "Confluence Url: ") nil 'temp-url-hist nil t)))
 
 (defun cf-prompt-space-name (&optional prompt-prefix)
   "Prompts for a confluence space name."
   (let* ((def-space (cf-get-default-space))
          (space-prompt (if def-space
-                           (format "Page Space [%s]: " def-space)
-                         "Page Space: ")))
+                           (format "Confluence Space [%s]: " def-space)
+                         "Confluence Space: ")))
     (read-string (concat (or prompt-prefix "") space-prompt) 
                  (cf-get-struct-value confluence-page-struct "space") 
                  'confluence-space-history def-space t)))
 
 (defun cf-prompt-page-name (&optional prompt-prefix)
   "Prompts for a confluence page name."
-  (read-string (concat (or prompt-prefix "") "Page Name: ") nil 'confluence-page-history nil t))
+  (read-string (concat (or prompt-prefix "") "Confluence Page Name: ") nil 'confluence-page-history nil t))
 
 (defun cf-prompt-path (prompt-prefix page-name space-name)
   "Prompts for a confluence page path."
-  (read-string (concat (or prompt-prefix "") "PageSpace/PageName: ")
+  (read-string (concat (or prompt-prefix "") "Confluence Space/PageName: ")
                (if space-name (concat space-name "/") nil)
                'confluence-path-history nil t))
 

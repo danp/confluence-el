@@ -64,7 +64,8 @@
 ;;
 ;; (add-hook 'confluence-mode-hook
 ;;   (local-set-key "\C-xw" confluence-prefix-map)
-;;   (local-set-key "\C-j" 'confluence-newline-and-indent))
+;;   (local-set-key "\M-j" 'confluence-newline-and-indent)
+;;   (local-set-key "\M-;" 'confluence-list-indent-dwim))
 ;;
 ;; LONGLINES
 ;;
@@ -1395,5 +1396,50 @@ Supports lists, tables, and headers."
     (if indentation
         (insert indentation))))
 
+(defun confluence-list-indent-dwim (&optional arg)
+  "Increases the list indentationn on the current line by 1 bullet.  With ARG decreases by 1 bullet."
+  (interactive "P")
+  (let ((indent-arg (if arg -1 1)))
+    (if (and mark-active transient-mark-mode)
+        (let ((beg (min (point) (mark)))
+              (end (max (point) (mark)))
+              (tmp-point nil))
+          (save-excursion
+            (goto-char end)
+            (setq tmp-point (line-beginning-position))
+            (confluence-modify-list-indent indent-arg)
+            (while (and (forward-line -1)
+                        (not (equal (line-beginning-position) tmp-point))
+                        (>= (line-end-position) beg))
+              (setq tmp-point (line-beginning-position))
+              (confluence-modify-list-indent indent-arg))
+          ))
+    (confluence-modify-list-indent indent-arg))))
+
+(defun confluence-modify-list-indent (depth)
+  "Updates the list indentation on the current line, adding DEPTH bullets if DEPTH is positive or removing DEPTH
+bullets if DEPTH is negative (does nothing if DEPTH is 0)."
+  (interactive "nList Depth Change: ")
+  (save-excursion
+    (beginning-of-line)
+    (cond
+     ((> depth 0)
+      (let ((indent-str (concat (make-string depth ?*) " ")))
+        (if (re-search-forward "\\=\\([*#]+\\)" (line-end-position) t)
+            (setq indent-str (make-string depth (elt (substring (match-string 1) -1) 0))))
+        (insert-before-markers indent-str)))
+     ((< depth 0)
+      (let ((tmp-point (point))
+            (indent-str ""))
+        (if (re-search-forward "\\=\\([*#]+\\)" (line-end-position) t)
+            (progn 
+              (setq indent-str (match-string 1))
+              (setq indent-str
+                    (if (< (abs depth) (length indent-str))
+                        (substring indent-str 0 depth)
+                      ""))))
+        (delete-region tmp-point (point))
+        (insert-before-markers indent-str))))))
+  
 (provide 'confluence)
 ;;; confluence.el ends here

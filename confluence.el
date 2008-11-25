@@ -1123,7 +1123,7 @@ given STRUCT-VAR."
 (defun cf-update-buffer-name ()
   "Sets the buffer name based on the buffer info if it is a page buffer."
   (let ((page-name (cf-get-struct-value confluence-page-struct "title"))
-        (page-space (cf-get-struct-value confluence-page-struct "space")))
+        (space-name (cf-get-struct-value confluence-page-struct "space")))
     ;; only update if the current buffer has title and space (this method will
     ;; do nothing on search pages)
     (if (and (> (length page-name) 0)

@@ -1034,17 +1034,19 @@ given STRUCT-VAR."
   "Completion function for confluence pages."
 
   ;; clear previous completion info if beginning of current string does not match previous string
-  (let ((old-page-completions nil))
+  (let ((tmp-comp-str (replace-regexp-in-string "^\\(\\s-\\|\\W\\)*\\(.*?\\)\\(\\s-\\|\\W\\)*$"
+                                                "\\2" comp-str t))
+        (old-page-completions nil))
     (if (and last-page-comp-str
              (not (eq t (compare-strings last-page-comp-str 0 (length last-page-comp-str)
-                                         comp-str 0 (length last-page-comp-str) t))))
+                                         tmp-comp-str 0 (length last-page-comp-str) t))))
         (progn
           (setq last-page-comp-str nil)
           (setq page-completions nil))
       ;; if the new string is over the repeat search threshold, clear previous search results
       (if (and last-page-comp-str
                (<= (+ (length last-page-comp-str) confluence-min-page-repeat-completion-length)
-                   (length comp-str)))
+                   (length tmp-comp-str)))
           (progn
             (setq old-page-completions page-completions)
             (setq page-completions nil))))
@@ -1052,18 +1054,16 @@ given STRUCT-VAR."
   ;; retrieve page completions if necessary
   (if (and (>= confluence-min-page-completion-length 0)
            (not page-completions)
-           (>= (length comp-str) confluence-min-page-completion-length))
+           (>= (length tmp-comp-str) confluence-min-page-completion-length))
       (let ((title-query
-             (replace-regexp-in-string "\\(\\W\\)" "\\\\\\&"
-                                       (replace-regexp-in-string "^\\(\\s-\\|\\W\\)*\\(.*?\\)\\(\\s-\\|\\W\\)*$"
-                                                                 "\\2" comp-str t) t)))
+             (replace-regexp-in-string "\\(\\W\\)" "\\\\\\&" tmp-comp-str t)))
         ;; the search syntax is a little flaky, sometimes quotes are good, sometimes not...
         (setq title-query
               (concat "title: "
                       (if (string-match "\\s-" title-query)
                           (concat title-query "*")
                         (concat "\"" title-query "*\""))))
-        (setq last-page-comp-str comp-str)
+        (setq last-page-comp-str tmp-comp-str)
         (setq page-completions (cf-result-to-completion-list
                                 (cf-rpc-search title-query space-name confluence-max-completion-results)
                                 "title"))

@@ -601,6 +601,47 @@ on `confluence-default-space-alist')."
   (let ((confluence-input-url (and arg (cf-prompt-url nil))))
     (confluence-search-by-type query-type)))
 
+(defun confluence-preview ()
+  "Preview the content in the current confluence buffer."
+  (interactive)
+  (if (and confluence-page-id
+           confluence-page-struct)
+      (let ((source-content "")
+            (rendered-content nil)
+            (render-buf (get-buffer-create " *Confluence-preview*")))
+        ;; if the local content is modified, submit the content
+        (if (buffer-modified-p)
+            (progn
+              (setq source-content (buffer-string))
+              ;; if there are save hooks, copy the content into a temp buf and run them on the content before
+              ;; submitting it
+              (if confluence-before-save-hook
+                  (with-current-buffer (get-buffer-create " *Confluence-decode*")
+                    (erase-buffer)
+                    (insert source-content)
+                    (run-hooks 'confluence-before-save-hook)
+                    (setq source-content (buffer-string))))))
+        ;; render the current page, optionally with locally modified content
+        (setq rendered-content (cf-rpc-render-page (cf-get-struct-value confluence-page-struct "space")
+                                                   confluence-page-id source-content))
+        ;; shove the html into a temp buffer
+        (with-current-buffer render-buf
+          (widen)
+          (erase-buffer)
+          (kill-all-local-variables)
+          (insert rendered-content)
+          ;; fix bug in stylesheet
+          (goto-char (point-min))
+          (if (re-search-forward "^\\s-*body\\s-*{[^}]*}" nil t)
+              (progn
+                (goto-char (match-beginning 0))
+                (if (re-search-forward "text-align:\\s-*\\(center\\)" (match-end 0) t)
+                    (replace-match "left" t t nil 1))))
+          (set-buffer-modified-p nil))
+        ;; launch browser with rendered content
+        (message "Launching browser with preview content...")
+        (browse-url-of-buffer render-buf))))
+
 (defun cf-rpc-execute (method-name &rest params)
   "Executes a confluence rpc call, managing the login token and logging in if
 necessary."
@@ -684,6 +725,10 @@ SPACE-NAME."
 (defun cf-rpc-remove-label (label-name obj-id)
   "Executes a confluence 'removeLabelByName' rpc call with label name and object id."
   (cf-rpc-execute 'confluence1.removeLabelByName label-name obj-id))
+
+(defun cf-rpc-render-page (space-name page-id &optional content)
+  "Executes a confluence 'renderContent' rpc call with space and page id and optional content."
+  (cf-rpc-execute 'confluence1.renderContent space-name page-id (or content "")))
 
 (defun cf-ediff-current-page (update-cur-version)
   "Starts an ediff session for the current confluence page, optionally
@@ -1372,6 +1417,7 @@ set by `cf-rpc-execute-internal')."
     (define-key map "s" 'confluence-search)
     (define-key map "." 'confluence-get-page-at-point)
     (define-key map "*" 'confluence-pop-tag-stack)
+    (define-key map "v" 'confluence-preview)
     map)
   "Keybinding prefix map which can be bound for common functions in confluence mode.")
 

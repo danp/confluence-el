@@ -1452,6 +1452,8 @@ Supports lists, tables, and headers."
               (tmp-point nil))
           (save-excursion
             (goto-char end)
+            (if (bolp)
+                (forward-line -1))
             (setq tmp-point (line-beginning-position))
             (confluence-modify-list-indent indent-arg)
             (while (and (forward-line -1)

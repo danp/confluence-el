@@ -338,7 +338,7 @@ page call (based on `confluence-default-space-alist')."
 opens the page using `browse-url', otherwise attempts to load it
 as a confluence page.  Analogous to M-. (`find-tag')."
   (interactive)
-  (if (thing-at-point-looking-at "\\[\\(\\([^|]*\\)[|]\\)?\\([^]]+\\)\\]")
+  (if (thing-at-point-looking-at "\\[\\(\\([^|\n]*\\)[|]\\)?\\([^]\n]+\\)\\]")
       (let ((url (match-string 3)))
         (set-text-properties 0 (length url) nil url)
         (if (string-match thing-at-point-url-regexp url)
@@ -929,13 +929,13 @@ search results and loading the data into that page."
         (attachment-name nil)
         (explicit-space nil))
     ;; split "space:page" links
-    (if (string-match "^\\([^:]*\\)[:]\\(.*\\)$" page-name)
+    (if (string-match "^\\([^:\n]*\\)[:]\\(.*\\)$" page-name)
         (progn
           (setq explicit-space t)
           (setq space-name (match-string 1 page-name))
           (setq page-name (match-string 2 page-name))))
     ;; strip off any trailing "|link tip"
-    (if (string-match "^\\([^|]*\\)[|]\\(.*\\)$" page-name)
+    (if (string-match "^\\([^|\n]*\\)[|]\\(.*\\)$" page-name)
         (setq page-name (match-string 1 page-name)))
     ;; get '^' (attachment) or '#' (anchor)
     (if (string-match "^\\(.*?\\)\\([#^]\\)\\(.*\\)$" page-name)
@@ -1246,7 +1246,7 @@ given STRUCT-VAR."
       (save-excursion
         (with-current-buffer completion-buffer
           (goto-char (point-min))
-          (while (re-search-forward "{anchor:\\([^{}]+\\)}" nil t)
+          (while (re-search-forward "{anchor:\\([^{}\n]+\\)}" nil t)
             (push (cons (match-string 1) t) current-completions)))))
   (cond
    ((not comp-flag)
@@ -1318,7 +1318,7 @@ something else."
 	(buffer-disable-undo (current-buffer))
 	(insert string)
 	(goto-char (point-min))
-        (while (re-search-forward "&\\([^;]+\\);" nil t)
+        (while (re-search-forward "&\\([^;\n]+\\);" nil t)
           (let ((ent-str (match-string 1)))
             (replace-match 
              (cond
@@ -1398,39 +1398,39 @@ set by `cf-rpc-execute-internal')."
 (defconst confluence-font-lock-keywords-1
   (list
   
-   '("{\\([^{}:]+:?\\)[^{}]*}"
+   '("{\\([^{}:\n]+:?\\)[^{}\n]*}"
      (1 'font-lock-constant-face))
   
-   '("{[^{}]+[:|]title=\\([^}|]+\\)[^{}]*}"
+   '("{[^{}\n]+[:|]title=\\([^}|\n]+\\)[^{}\n]*}"
      (1 'bold append))
   
-   '("{warning\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){warning}"
+   '("{warning\\(?:[:][^}\n]*\\)?}\\(\\(.\\|[\n]\\)*?\\){warning}"
      (1 'font-lock-warning-face prepend))
-   '("{note\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){note}"
+   '("{note\\(?:[:][^}\n]*\\)?}\\(\\(.\\|[\n]\\)*?\\){note}"
      (1 'font-lock-minor-warning-face prepend))
-   '("{info\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){info}"
+   '("{info\\(?:[:][^}\n]*\\)?}\\(\\(.\\|[\n]\\)*?\\){info}"
      (1 'font-lock-doc-face prepend))
-   '("{tip\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){tip}"
+   '("{tip\\(?:[:][^}\n]*\\)?}\\(\\(.\\|[\n]\\)*?\\){tip}"
      (1 'font-lock-comment-face prepend))
   
    ;; bold
-   '("[ ][*]\\([^*]+\\)[*][ ]"
+   '("[ ][*]\\([^*\n]+\\)[*][ ]"
      (1 'bold))
    
    ;; code
-   '("{{\\([^}]+\\)}}"
+   '("{{\\([^}\n]+\\)}}"
      (1 'confluence-code-face t))
    
    ;; italics/emphasised
-   '("[ ]_\\([^_]+\\)_[ ]"
+   '("[ ]_\\([^_\n]+\\)_[ ]"
      (1 'italic prepend))
 
    ;; underline
-   '("[ ][+]\\([^+]+\\)[+][ ]"
+   '("[ ][+]\\([^+\n]+\\)[+][ ]"
      (1 'underline prepend))
 
    ;; strike-through
-   '("[ ][-]\\([^-]+\\)[-][ ]"
+   '("[ ][-]\\([^-\n]+\\)[-][ ]"
      (1 '(:strike-through t) prepend))
 
    ;; headings
@@ -1448,20 +1448,20 @@ set by `cf-rpc-execute-internal')."
      (1 'font-lock-constant-face))
    
    ;; links
-   '("\\(\\[\\)\\([^|]*\\)[|]\\([^]]+\\)\\(\\]\\)"
+   '("\\(\\[\\)\\([^|\n]*\\)[|]\\([^]]+\\)\\(\\]\\)"
      (1 'font-lock-constant-face)
      (2 'font-lock-string-face)
      (3 'underline)
      (4 'font-lock-constant-face))
-   '("\\(\\[\\)\\([^]|]+\\)\\(\\]\\)"
+   '("\\(\\[\\)\\([^]|\n]+\\)\\(\\]\\)"
      (1 'font-lock-constant-face)
      (2 '(font-lock-string-face underline))
      (3 'font-lock-constant-face))
-   '("{anchor:\\([^{}]+\\)}"
+   '("{anchor:\\([^{}\n]+\\)}"
      (1 'font-lock-string-face))
 
    ;; images, embedded content
-   '("\\([!]\\)\\([^!]+\\)\\([!]\\)"
+   '("\\([!]\\)\\([^!\n]+\\)\\([!]\\)"
      (1 'font-lock-constant-face)
      (2 'font-lock-reference-face)
      (3 'font-lock-constant-face))
@@ -1480,13 +1480,13 @@ set by `cf-rpc-execute-internal')."
           (list
   
            ;; code/preformatted blocks
-           '("{noformat\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){noformat}"
+           '("{noformat\\(?:[:][^}\n]*\\)?}\\(\\(.\\|[\n]\\)*?\\){noformat}"
              (1 'confluence-code-face t))
-           '("{code\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){code}"
+           '("{code\\(?:[:][^}\n]*\\)?}\\(\\(.\\|[\n]\\)*?\\){code}"
              (1 'confluence-code-face t))
 
            ;; panels
-           '("{panel\\(?:[:][^}]*\\)?}\\(?:\\s-*[\r]?[\n]\\)?\\(\\(.\\|[\n]\\)*?\\){panel}"
+           '("{panel\\(?:[:][^}\n]*\\)?}\\(?:\\s-*[\r]?[\n]\\)?\\(\\(.\\|[\n]\\)*?\\){panel}"
              (1 'confluence-panel-face append))
            ))
   "Gaudy level highlighting for confluence mode.")

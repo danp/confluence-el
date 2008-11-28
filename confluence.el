@@ -312,7 +312,7 @@ re-login to the current url."
         (error nil)))
     cur-token))
 
-(defun confluence-get-page (&optional page-name space-name)
+(defun confluence-get-page (&optional page-name space-name anchor-name)
   "Loads a confluence page for the given SPACE-NAME and PAGE-NAME
 into a buffer (if not already loaded) and switches to it.
 Analogous to `find-file'.  Every time you navitage to a page with
@@ -322,7 +322,8 @@ pop back out of to return back through your navigation path (with
 M-* `confluence-pop-tag-stack')."
   (interactive)
   (cf-prompt-page-info nil 'page-name 'space-name)
-  (cf-show-page (cf-rpc-get-page-by-name space-name page-name)))
+  (cf-show-page (cf-rpc-get-page-by-name space-name page-name) nil 
+                anchor-name))
 
 (defun confluence-get-page-with-url (&optional arg)
   "With ARG, prompts for the confluence url to use for the get
@@ -358,6 +359,26 @@ switches to it."
     (if (equal parent-page-id "0")
         (message "Current page has no parent page")
       (cf-show-page (cf-rpc-get-page-by-id parent-page-id)))))
+
+(defun confluence-get-attachment (&optional page-name space-name attachment-name)
+  (interactive)
+  ;; FIXME, writeme
+  (error "Attachment retrieval not supported yet"))
+
+(defun confluence-goto-anchor (&optional anchor-name)
+  "Moves to the given ANCHOR-NAME in the current confluence buffer."
+  (interactive)
+  (if (not anchor-name)
+      (setq anchor-name (cf-read-string-simple "Confluence Anchor Name: " 
+                                               nil 'cf-complete-anchor-name)))
+  (let ((anchor-position nil))
+    (save-excursion
+      (goto-char (point-min))
+      (setq anchor-position
+            (search-forward (concat "{anchor:" anchor-name "}") nil t)))
+    (if anchor-position
+        (goto-char anchor-position)
+      (message "Could not find anchor %s in page..." anchor-name))))
 
 (defun confluence-create-page (&optional page-name space-name)
   "Creates a new confluence page for the given SPACE-NAME and
@@ -476,7 +497,7 @@ latest version of that page saved in confluence."
   (let ((page-name (cf-prompt-page-name 
                     (cf-get-struct-value confluence-page-struct "space") 
                     "New ")))
-    (if (and (> (length page-name) 0)
+    (if (and (cf-string-notempty page-name)
              (not (equal page-name (cf-get-struct-value confluence-page-struct "title"))))
         (progn
           (cf-set-struct-value 'confluence-page-struct "title" page-name)
@@ -489,12 +510,9 @@ latest version of that page saved in confluence."
   (if confluence-page-id
       (progn
         (if (not label-name)
-            (let ((url-show-status nil)
-                  (label-completions nil))
-              (setq label-name
-                    (completing-read "New Confluence Label: " 'cf-complete-label-name nil nil nil
-                                     'confluence-label-history nil t))))
-        (if (> (length label-name) 0)
+            (setq label-name
+                  (cf-read-string-simple "New Confluence Label: " 'confluence-label-history 'cf-complete-label-name)))
+        (if (cf-string-notempty label-name)
             (cf-rpc-add-label label-name confluence-page-id)))))
 
 (defun confluence-remove-label (&optional label-name)
@@ -509,9 +527,8 @@ latest version of that page saved in confluence."
                 (message "Current page has no labels...")
               (progn
                 (or label-name
-                    (setq label-name (completing-read "Old Confluence Label: " cur-labels nil t nil
-                                                      'confluence-label-history nil t)))))))
-        (if (> (length label-name) 0)
+                    (setq label-name (cf-read-string-simple "Old Confluence Label: " 'confluence-label-history cur-labels t)))))))
+        (if (cf-string-notempty label-name)
             (cf-rpc-remove-label label-name confluence-page-id)))))
 
 (defun confluence-get-labels ()
@@ -566,9 +583,9 @@ on `confluence-default-space-alist')."
 the given SPACE-NAME."
   (interactive)
   (or query-type
-      (setq query-type (completing-read "Confluence Search Type [content]: "
-                                        confluence-search-types
-                                        nil t nil nil "content" t)))
+      (setq query-type (cf-read-string-simple "Confluence Search Type [content]: "
+                                        nil confluence-search-types
+                                        t nil "content")))
   (if (stringp query-type)
       (setq query-type (intern query-type)))
   (let ((query-prompt-prefix "")
@@ -699,7 +716,7 @@ necessary."
   "Executes a confluence 'search' rpc call, optionally restricted by the given
 SPACE-NAME."
   (let ((params (list (cons "type" "page"))))
-    (if (> (length space-name) 0)
+    (if (cf-string-notempty space-name)
         (cf-set-struct-value 'params "spaceKey" space-name))
     (cf-rpc-execute 'confluence1.search query
                     params (or max-results confluence-search-max-results))))
@@ -711,6 +728,10 @@ SPACE-NAME."
 (defun cf-rpc-get-spaces ()
   "Executes a confluence 'getSpaces' rpc call."
   (cf-rpc-execute 'confluence1.getSpaces))
+
+(defun cf-rpc-get-space (space-name)
+  "Executes a confluence 'getSpace' rpc call with space name."
+  (cf-rpc-execute 'confluence1.getSpace space-name))
 
 (defun cf-rpc-get-labels (obj-id)
   "Executes a confluence 'getLabelsById' rpc call with object id."
@@ -793,7 +814,7 @@ page."
            (t
             (error "Invalid load info")))))))
 
-(defun cf-show-page (full-page &optional no-push)
+(defun cf-show-page (full-page &optional no-push anchor-name)
   "Does the work of finding or creating a buffer for the given confluence page
 and loading the data if necessary."
   (if (not no-push)
@@ -812,7 +833,9 @@ and loading the data if necessary."
       (if (not (equal confluence-load-info load-info))
           (progn
             (cf-insert-page full-page load-info)
-            (goto-char (point-min)))))
+            (goto-char (point-min))))
+      (if anchor-name
+          (confluence-goto-anchor anchor-name)))
     (switch-to-buffer page-buffer)))
 
 (defun cf-insert-page (full-page &optional load-info browse-function keep-undo)
@@ -886,7 +909,7 @@ search results and loading the data into that page."
                         (cf-get-struct-value search-result "title")
                         (cf-get-struct-value search-result "id")))
         (let ((excerpt (cf-get-struct-value search-result "excerpt")))
-          (if (> (length excerpt) 0)
+          (if (cf-string-notempty excerpt)
               (insert excerpt "\n")))
         (insert "\n"))
       (cf-set-struct-value 'search-page "content" (buffer-string)))
@@ -901,17 +924,51 @@ search results and loading the data into that page."
 (defun cf-simple-browse-function (url)
   "Simple browse function used in page buffers."
   (let ((space-name (cf-get-struct-value confluence-page-struct "space"))
-        (page-name url))
+        (page-name url)
+        (anchor-name nil)
+        (attachment-name nil)
+        (explicit-space nil))
     ;; split "space:page" links
     (if (string-match "^\\([^:]*\\)[:]\\(.*\\)$" page-name)
         (progn
+          (setq explicit-space t)
           (setq space-name (match-string 1 page-name))
           (setq page-name (match-string 2 page-name))))
-    ;; ignore tail of links starting with '^' (attachment) or '#' (anchor)
-    ;; FIXME, we could eventually add support for retrieving attachments
-    (if (string-match "^\\(.*?\\)[#^].*$" page-name)
+    ;; strip off any trailing "|link tip"
+    (if (string-match "^\\([^|]*\\)[|]\\(.*\\)$" page-name)
         (setq page-name (match-string 1 page-name)))
-    (confluence-get-page page-name space-name)))
+    ;; get '^' (attachment) or '#' (anchor)
+    (if (string-match "^\\(.*?\\)\\([#^]\\)\\(.*\\)$" page-name)
+        (progn
+          (if (equal (match-string 2 page-name) "^")
+              (setq attachment-name (match-string 3 page-name))
+            (setq anchor-name (match-string 3 page-name)))
+          (setq page-name (match-string 1 page-name))))
+    (cond
+     ;; open an attachment
+     ((cf-string-notempty attachment-name)
+      (if (cf-string-empty page-name)
+          (setq page-name (cf-get-struct-value 
+                           confluence-page-struct "title")))
+      (confluence-get-attachment page-name space-name attachment-name))
+     ;; goto anchor in this page
+     ((and (cf-string-notempty anchor-name)
+           (cf-string-empty page-name))
+      (confluence-goto-anchor anchor-name))
+     ;; goto space "home" page
+     ((and explicit-space
+           (cf-string-notempty space-name)
+           (cf-string-empty page-name))
+      (cf-show-page
+       (cf-rpc-get-page-by-id (cf-get-struct-value 
+                               (cf-rpc-get-space space-name) "homePage"))))
+     ;; goto user profile page
+     ((and (not explicit-space)
+           (string-match "^[~].+$" page-name))
+      ;; FIXME, writeme
+      (error "User profile not supported yet"))
+     (t
+      (confluence-get-page page-name space-name anchor-name)))))
 
 (defun cf-get-parent-page-id (try-current-page &optional space-name)
   "Gets a confluence parent page id, optionally using the one in the current
@@ -926,8 +983,8 @@ buffer."
     (let ((parent-space-name (or space-name (cf-get-struct-value confluence-page-struct "space")))
           (parent-page-name nil))
       (cf-prompt-page-info "Parent " 'parent-page-name 'parent-space-name)
-      (if (and (> (length parent-space-name) 0)
-               (> (length parent-page-name) 0))
+      (if (and (cf-string-notempty parent-space-name)
+               (cf-string-notempty parent-page-name))
           (cf-get-struct-value (cf-rpc-get-page-by-name parent-space-name parent-page-name) "id")
         nil))))
 
@@ -1003,25 +1060,37 @@ specified as one path).  Suitable for use with `confluence-prompt-page-function'
                   'cf-complete-page-path nil
                   (if space-name (concat space-name "/") nil)))
 
-(defun cf-read-string (prompt-prefix prompt hist-alist-var hist-key comp-func-or-table require-match
-                       &optional init-val def-val)
+(defun cf-read-string (prompt-prefix prompt hist-alist-var hist-key 
+                       comp-func-or-table &optional
+                       require-match init-val def-val)
   "Prompt for a string using the given prompt info and history alist."
   ;; we actually use the history var as an alist of history vars so we can
   ;; have different histories in different contexts (e.g. separate space
   ;; histories for each url and separate page histories for each space)
-  (let ((space-completions nil)
-        (page-completions nil)
-        (last-page-comp-str nil)
-        (url-show-status nil)
-        (confluence-completing-read t)
-        (hist-list (cf-get-struct-value (symbol-value hist-alist-var) hist-key))
+  (let ((hist-list (cf-get-struct-value (symbol-value hist-alist-var) 
+                                        hist-key))
         (result-string nil))
     (setq result-string
-          (completing-read (concat (or prompt-prefix "") prompt) comp-func-or-table
-                           nil require-match init-val 'hist-list def-val t))
+          (cf-read-string-simple (concat (or prompt-prefix "") prompt)
+                                 'hist-list comp-func-or-table
+                                 require-match init-val def-val))
     ;; put the new history list back into the alist
     (cf-set-struct-value hist-alist-var hist-key hist-list)
     result-string))
+
+(defun cf-read-string-simple (prompt hist-list-var comp-func-or-table
+                              &optional require-match init-val def-val)
+  "Prompt for a string using the given prompt info and history list."
+  (let ((current-completions nil)
+        (current-other-completions nil)
+        (last-comp-str nil)
+        (url-show-status nil)
+        (completion-buffer (or (and (boundp 'completion-buffer)
+                                    completion-buffer)
+                               (current-buffer)))
+        (confluence-completing-read t))
+    (completing-read prompt comp-func-or-table
+                     nil require-match init-val hist-list-var def-val t)))
 
 (defun cf-minibuffer-setup ()
   "Minibuffer setup hook which changes some keybindings for confluence completion."
@@ -1074,15 +1143,16 @@ given STRUCT-VAR."
 
 (defun cf-complete-space-name (comp-str pred comp-flag)
   "Completion function for confluence spaces."
-  (if (not space-completions)
-      (setq space-completions (cf-result-to-completion-list (cf-rpc-get-spaces) "key")))
+  (if (not current-other-completions)
+      (with-current-buffer completion-buffer
+        (setq current-other-completions (cf-result-to-completion-list (cf-rpc-get-spaces) "key"))))
   (cond
    ((not comp-flag)
-    (or (try-completion comp-str space-completions pred) comp-str))
+    (or (try-completion comp-str current-other-completions pred) comp-str))
    ((eq comp-flag t)
-    (or (all-completions comp-str space-completions pred) (list comp-str)))
+    (or (all-completions comp-str current-other-completions pred) (list comp-str)))
    ((eq comp-flag 'lambda)
-    (and (assoc comp-str space-completions) t))))
+    (and (assoc comp-str current-other-completions) t))))
 
 (defun cf-complete-page-name (comp-str pred comp-flag)
   "Completion function for confluence pages."
@@ -1090,24 +1160,24 @@ given STRUCT-VAR."
   ;; clear previous completion info if beginning of current string does not match previous string
   (let ((tmp-comp-str (replace-regexp-in-string "^\\(\\s-\\|\\W\\)*\\(.*?\\)\\(\\s-\\|\\W\\)*$"
                                                 "\\2" comp-str t))
-        (old-page-completions nil))
-    (if (and last-page-comp-str
-             (not (eq t (compare-strings last-page-comp-str 0 (length last-page-comp-str)
-                                         tmp-comp-str 0 (length last-page-comp-str) t))))
+        (old-current-completions nil))
+    (if (and last-comp-str
+             (not (eq t (compare-strings last-comp-str 0 (length last-comp-str)
+                                         tmp-comp-str 0 (length last-comp-str) t))))
         (progn
-          (setq last-page-comp-str nil)
-          (setq page-completions nil))
+          (setq last-comp-str nil)
+          (setq current-completions nil))
       ;; if the new string is over the repeat search threshold, clear previous search results
-      (if (and last-page-comp-str
-               (<= (+ (length last-page-comp-str) confluence-min-page-repeat-completion-length)
+      (if (and last-comp-str
+               (<= (+ (length last-comp-str) confluence-min-page-repeat-completion-length)
                    (length tmp-comp-str)))
           (progn
-            (setq old-page-completions page-completions)
-            (setq page-completions nil))))
+            (setq old-current-completions current-completions)
+            (setq current-completions nil))))
     
   ;; retrieve page completions if necessary
   (if (and (>= confluence-min-page-completion-length 0)
-           (not page-completions)
+           (not current-completions)
            (>= (length tmp-comp-str) confluence-min-page-completion-length))
       (let ((title-query
              (replace-regexp-in-string "\\(\\W\\)" "\\\\\\&" tmp-comp-str t)))
@@ -1117,23 +1187,24 @@ given STRUCT-VAR."
                       (if (string-match "\\s-" title-query)
                           (concat title-query "*")
                         (concat "\"" title-query "*\""))))
-        (setq last-page-comp-str tmp-comp-str)
-        (setq page-completions (cf-result-to-completion-list
-                                (cf-rpc-search title-query space-name confluence-max-completion-results)
-                                "title"))
+        (setq last-comp-str tmp-comp-str)
+        (with-current-buffer completion-buffer
+          (setq current-completions (cf-result-to-completion-list
+                                     (cf-rpc-search title-query space-name confluence-max-completion-results)
+                                     "title")))
         ;; the query results are flaky, if we had results before and none now, reuse the old list
-        (if (and (= (length page-completions) 0)
-                 old-page-completions)
-            (setq page-completions old-page-completions))
+        (if (and (= (length current-completions) 0)
+                 old-current-completions)
+            (setq current-completions old-current-completions))
         )))
   
   (cond
    ((not comp-flag)
-    (or (try-completion comp-str page-completions pred) comp-str))
+    (or (try-completion comp-str current-completions pred) comp-str))
    ((eq comp-flag t)
-    (or (all-completions comp-str page-completions pred) (list comp-str)))
+    (or (all-completions comp-str current-completions pred) (list comp-str)))
    ((eq comp-flag 'lambda)
-    (and (assoc comp-str page-completions) t))))
+    (and (assoc comp-str current-completions) t))))
 
 (defun cf-complete-page-path (comp-str pred comp-flag)
   "Completion function for confluence page paths."
@@ -1157,16 +1228,33 @@ given STRUCT-VAR."
 
 (defun cf-complete-label-name (comp-str pred comp-flag)
   "Completion function for confluence labels."
-  (if (not label-completions)
-      (setq label-completions (cf-result-to-completion-list (cf-rpc-get-recent-labels
-                                                             confluence-max-completion-results) "name")))
+  (if (not current-completions)
+      (with-current-buffer completion-buffer
+        (setq current-completions (cf-result-to-completion-list (cf-rpc-get-recent-labels
+                                                                 confluence-max-completion-results) "name"))))
   (cond
    ((not comp-flag)
-    (or (try-completion comp-str label-completions pred) comp-str))
+    (or (try-completion comp-str current-completions pred) comp-str))
    ((eq comp-flag t)
-    (or (all-completions comp-str label-completions pred) (list comp-str)))
+    (or (all-completions comp-str current-completions pred) (list comp-str)))
    ((eq comp-flag 'lambda)
-    (and (assoc comp-str label-completions) t))))
+    (and (assoc comp-str current-completions) t))))
+
+(defun cf-complete-anchor-name (comp-str pred comp-flag)
+  "Completion function for confluence anchors."
+  (if (not current-completions)
+      (save-excursion
+        (with-current-buffer completion-buffer
+          (goto-char (point-min))
+          (while (re-search-forward "{anchor:\\([^{}]+\\)}" nil t)
+            (push (cons (match-string 1) t) current-completions)))))
+  (cond
+   ((not comp-flag)
+    (or (try-completion comp-str current-completions pred) comp-str))
+   ((eq comp-flag t)
+    (or (all-completions comp-str current-completions pred) (list comp-str)))
+   ((eq comp-flag 'lambda)
+    (and (assoc comp-str current-completions) t))))
 
 (defun cf-update-buffer-name ()
   "Sets the buffer name based on the buffer info if it is a page buffer."
@@ -1174,8 +1262,8 @@ given STRUCT-VAR."
         (space-name (cf-get-struct-value confluence-page-struct "space")))
     ;; only update if the current buffer has title and space (this method will
     ;; do nothing on search pages)
-    (if (and (> (length page-name) 0)
-             (> (length space-name) 0))
+    (if (and (cf-string-notempty page-name)
+             (cf-string-notempty space-name))
         (rename-buffer (cf-format-buffer-name page-name space-name)))))
 
 (defun cf-format-buffer-name (page-name space-name)
@@ -1194,6 +1282,14 @@ given STRUCT-VAR."
 (defun cf-get-default-space ()
   "Gets the default confluence space to use for the current operation."
   (cf-get-struct-value confluence-default-space-alist (cf-get-url)))
+
+(defun cf-string-notempty (str)
+  "Returns t if the given string is not empty."
+  (> (length str) 0))
+
+(defun cf-string-empty (str)
+  "Returns t if the given string is empty."
+  (= (length str) 0))
 
 (defun cf-url-decode-entities-in-value (value)
   "Decodes XML entities in the given value, which may be a struct, list or
@@ -1302,9 +1398,11 @@ set by `cf-rpc-execute-internal')."
 (defconst confluence-font-lock-keywords-1
   (list
   
-   '("{\\([^{}]\\(?:[^{}]+[:|]title=\\([^}|]+\\)\\)?[^{}]*\\)}"
-     (1 'font-lock-constant-face)
-     (2 'bold append t))
+   '("{\\([^{}:]+:?\\)[^{}]*}"
+     (1 'font-lock-constant-face))
+  
+   '("{[^{}]+[:|]title=\\([^}|]+\\)[^{}]*}"
+     (1 'bold append))
   
    '("{warning\\(?:[:][^}]*\\)?}\\(\\(.\\|[\n]\\)*?\\){warning}"
      (1 'font-lock-warning-face prepend))
@@ -1355,6 +1453,8 @@ set by `cf-rpc-execute-internal')."
      (1 'font-lock-constant-face)
      (2 '(font-lock-string-face underline))
      (3 'font-lock-constant-face))
+   '("{anchor:\\([^{}]+\\)}"
+     (1 'font-lock-string-face))
 
    ;; images, embedded content
    '("\\([!]\\)\\([^!]+\\)\\([!]\\)"

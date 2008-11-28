@@ -300,7 +300,7 @@ re-login to the current url."
         (cur-token (cf-get-struct-value confluence-login-token-alist
                                         (cf-get-url))))
     (while (not cur-token)
-      (condition-case nil
+      (condition-case err
           (progn
             (setq cur-token
                   (cf-rpc-execute-internal 
@@ -309,7 +309,7 @@ re-login to the current url."
                    (read-passwd "Confluence Password: ")))
             (cf-set-struct-value 'confluence-login-token-alist
                                  (cf-get-url) cur-token))
-        (error nil)))
+        (error (message "Failed logging in: %s" (error-message-string err)))))
     cur-token))
 
 (defun confluence-get-page (&optional page-name space-name anchor-name)

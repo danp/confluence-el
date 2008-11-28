@@ -151,7 +151,7 @@
 
 ;;; Code:
 
-(require 'xml-rpc)
+;;(require 'xml-rpc)
 (require 'ediff)
 (require 'thingatpt)
 (require 'browse-url)
@@ -1428,6 +1428,10 @@ set by `cf-rpc-execute-internal')."
    ;; underline
    '("[ ][+]\\([^+]+\\)[+][ ]"
      (1 'underline prepend))
+
+   ;; strike-through
+   '("[ ][-]\\([^-]+\\)[-][ ]"
+     (1 '(:strike-through t) prepend))
 
    ;; headings
    '("^h1[.] \\(.*\\)$"

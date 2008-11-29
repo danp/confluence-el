@@ -962,11 +962,12 @@ search results and loading the data into that page."
       (cf-show-page
        (cf-rpc-get-page-by-id (cf-get-struct-value 
                                (cf-rpc-get-space space-name) "homePage"))))
-     ;; goto user profile page
+     ;; goto user profile page (load like space "home" page)
      ((and (not explicit-space)
            (string-match "^[~].+$" page-name))
-      ;; FIXME, writeme
-      (error "User profile not supported yet"))
+      (cf-show-page
+       (cf-rpc-get-page-by-id (cf-get-struct-value 
+                               (cf-rpc-get-space page-name) "homePage"))))
      (t
       (confluence-get-page page-name space-name anchor-name)))))
 
@@ -1324,10 +1325,10 @@ something else."
              (cond
               ;; simple xml entities
               ((cdr-safe (assoc ent-str
-                                '(("quot" . ?\")
-                                  ("amp" . ?&)
-                                  ("lt" . ?<)
-                                  ("gt" . ?>)))))
+                                '(("quot" . "\"")
+                                  ("amp" . "&")
+                                  ("lt" . "<")
+                                  ("gt" . ">")))))
               ;; decimal number character entities
               ((save-match-data
                  (and (string-match "^#\\([0-9]+\\)$" ent-str)

@@ -1320,7 +1320,8 @@ something else."
 	(insert string)
 	(goto-char (point-min))
         (while (re-search-forward "&\\([^;\n]+\\);" nil t)
-          (let ((ent-str (match-string 1)))
+          (let ((ent-str (match-string 1))
+                (ent-point (match-beginning 1)))
             (replace-match 
              (cond
               ;; simple xml entities
@@ -1339,7 +1340,8 @@ something else."
                       (cf-number-entity-to-string (string-to-number (match-string 1 ent-str) 16)))))
               ;; unknown entity
               (t (concat "&" ent-str ";")))
-             t t)))
+             t t)
+            (goto-char ent-point)))
 
 	(goto-char (point-min))
         ;; always convert to unix newlines

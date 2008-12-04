@@ -333,11 +333,12 @@ page call (based on `confluence-default-space-alist')."
         (confluence-input-url nil))
     (confluence-get-page)))
 
-(defun confluence-get-page-at-point ()
+(defun confluence-get-page-at-point (&optional arg)
   "Opens the confluence page at the current point.  If the link is a url,
-opens the page using `browse-url', otherwise attempts to load it
-as a confluence page.  Analogous to M-. (`find-tag')."
-  (interactive)
+opens the page using `browse-url', otherwise attempts to load it as a
+confluence page.  Analogous to M-. (`find-tag').  Any ARG is passed to
+`confluence-get-page-with-url' if nothing is found at point."
+  (interactive "P")
   (if (thing-at-point-looking-at "\\[\\(\\([^|\n]*\\)[|]\\)?\\([^]\n]+\\)\\]")
       (let ((url (match-string 3)))
         (set-text-properties 0 (length url) nil url)
@@ -348,7 +349,7 @@ as a confluence page.  Analogous to M-. (`find-tag')."
             (cf-simple-browse-function url))))
     (if (thing-at-point 'url)
         (browse-url-at-point)
-      (confluence-get-page))))
+      (confluence-get-page-with-url arg))))
 
 (defun confluence-get-parent-page ()
   "Loads a confluence page for the parent of the current

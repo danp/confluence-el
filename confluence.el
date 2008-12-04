@@ -361,10 +361,45 @@ switches to it."
         (message "Current page has no parent page")
       (cf-show-page (cf-rpc-get-page-by-id parent-page-id)))))
 
-(defun confluence-get-attachment (&optional page-name space-name attachment-name)
+(defun confluence-get-attachment (&optional page-name space-name file-name 
+                                  page-id)
+  "Gets the attachment with the given info and optionally displaying it in a
+buffer for viewing or downloading it to a local file."
   (interactive)
-  ;; FIXME, writeme
-  (error "Attachment retrieval not supported yet"))
+  ;; get page and space names if not given
+  (cf-prompt-page-info nil 'page-name 'space-name)
+  ;; find page-id if not given
+  (if (not page-id)
+      (let ((url-show-status nil))
+        (setq page-id (cf-get-struct-value (cf-rpc-get-page-by-name
+                                            space-name page-name) "id"))))
+  ;; get file name if not given
+  (if (not file-name)
+      (setq file-name (cf-read-string-simple "Confluence attachment file name: " 'confluence-attachment-history 'cf-complete-attachment-name t)))
+
+  (let ((save-only-file-name nil)
+        (result-buffer nil))
+    ;; determine if caller wants to view the file or merely download it
+    (if (equal "d"
+               (cf-read-string-simple "View confluence attachment (v) or download only (d) [v]: " nil '(("v" . t) ("d" . t)) t nil "v"))
+        (setq save-only-file-name (expand-file-name 
+                                   (read-file-name "Download file name: " 
+                                                   nil file-name))))
+    ;; download attachment
+    (setq result-buffer
+          (cf-insert-attachment page-name space-name file-name page-id nil 
+                                save-only-file-name))
+    ;; if a result was returned, the caller wanted to view the buffer
+    (if result-buffer
+        (switch-to-buffer result-buffer))))
+
+(defun confluence-get-attachment-with-url (&optional arg)
+  "With ARG, prompts for the confluence url to use for the get
+attachment call (based on `confluence-default-space-alist')."
+  (interactive "P")
+  (let ((confluence-switch-url arg)
+        (confluence-input-url nil))
+    (confluence-get-attachment)))
 
 (defun confluence-goto-anchor (&optional anchor-name)
   "Moves to the given ANCHOR-NAME in the current confluence buffer."
@@ -428,17 +463,21 @@ macro, it intentionally binds named variables that match the
 structure of the stack entry.  The structure and the variable
 bindings are:
 
-  (page-type confluence-input-url page-id-or-query &optional space-name)
+  (page-type confluence-input-url page-id-or-query &optional 
+   space-name page-name file-name)
 
 Each load-info can be either the result of a search query (in
-which case page-type will be the symbol 'search or a page
-visitation (and page-type will be 'page).  page-id-or-query will
-be either a page-id or a query - depending on the type of stack
-entry (page or query).  space-name will be populated when
-page-type is 'search.
+which case page-type will be the symbol 'search, a page
+visitation (and page-type will be 'page), or an attachment 
+download (and page-type will be 'attachment). page-id-or-query 
+will be either a page-id or a query - depending on 
+the type of stack entry (page or query).  space-name will be 
+populated when page-type is 'search or 'attachment.  page-name 
+and file-name will be populated when page-type is 'attachment.
 "
   `(destructuring-bind
-       (page-type confluence-input-url page-id-or-query &optional space-name)
+       (page-type confluence-input-url page-id-or-query 
+                  &optional space-name page-name file-name)
        ,load-info
      ,@body))
 
@@ -662,17 +701,26 @@ on `confluence-default-space-alist')."
 (defun cf-rpc-execute (method-name &rest params)
   "Executes a confluence rpc call, managing the login token and logging in if
 necessary."
+  (apply 'cf-rpc-execute-async nil method-name params))
+
+(defun cf-rpc-execute-async (async-callback method-name &rest params)
+  "Executes a confluence rpc call, managing the login token and logging in if
+necessary."
   (condition-case err
-      (apply 'cf-rpc-execute-internal method-name (confluence-login) params)
+      (apply 'cf-rpc-execute-internal-async async-callback method-name (confluence-login) params)
     (error
      ;; if we get a fault with the given keywords, try the call again after a
      ;; re-login (we force re-login), otherwise, just rethrow the error
      (if (and xml-rpc-fault-string
               (string-match "\\<authenticated\\>\\|\\<expired\\>" xml-rpc-fault-string))
-         (apply 'cf-rpc-execute-internal method-name (confluence-login t) params)
+         (apply 'cf-rpc-execute-internal-async async-callback method-name (confluence-login t) params)
        (error (error-message-string err))))))
 
 (defun cf-rpc-execute-internal (method-name &rest params)
+  "Executes a raw confluence rpc call.  Handles all necessary encoding/decoding of strings."
+  (apply 'cf-rpc-execute-internal-async nil method-name params))
+
+(defun cf-rpc-execute-internal-async (async-callback method-name &rest params)
   "Executes a raw confluence rpc call.  Handles all necessary encoding/decoding of strings."
   (setq xml-rpc-fault-string nil)
   (setq xml-rpc-fault-code   nil)
@@ -693,7 +741,11 @@ necessary."
     (if (not page-url)
         (error "No confluence url configured"))
     (condition-case err
-        (let ((rpc-result (cf-url-decode-entities-in-value (apply 'xml-rpc-method-call page-url method-name params))))
+        (let ((rpc-result 
+               (if async-callback
+                   (apply 'xml-rpc-method-call-async async-callback page-url method-name params)
+               (cf-url-decode-entities-in-value (apply 'xml-rpc-method-call page-url method-name params)))
+               ))
           ;; clear any url messages before returning
           (message nil)
           rpc-result)
@@ -754,6 +806,10 @@ SPACE-NAME."
   "Executes a confluence 'renderContent' rpc call with space and page id and optional content."
   (cf-rpc-execute 'confluence1.renderContent space-name page-id (or content "")))
 
+(defun cf-rpc-get-attachments (page-id)
+  "Executes a confluence 'getAttachments' rpc call with page id."
+  (cf-rpc-execute 'confluence1.getAttachments page-id))
+
 (defun cf-ediff-current-page (update-cur-version)
   "Starts an ediff session for the current confluence page, optionally
 updating the saved metadata to the latest version."
@@ -812,6 +868,16 @@ page."
             (cf-insert-search-results 
              (cf-rpc-search page-id-or-query space-name)
              confluence-load-info))
+           ;; reload attachment data
+           ((eq page-type 'attachment)
+            (if (or (not (file-exists-p buffer-file-name))
+                    (equal "d"
+                           (cf-read-string-simple "Revert attachment from Confluence download (d) or local file (f) [d]: " 
+                            nil '(("d" . t) ("f" . t)) t nil "d")))
+                (cf-insert-attachment page-name space-name file-name 
+                                      page-id-or-query (current-buffer) nil)
+              (let ((revert-buffer-function nil))
+                (revert-buffer arg t))))
            (t
             (error "Invalid load info")))))))
 
@@ -928,7 +994,8 @@ search results and loading the data into that page."
         (page-name url)
         (anchor-name nil)
         (attachment-name nil)
-        (explicit-space nil))
+        (explicit-space nil)
+        (page-id nil))
     ;; split "space:page" links
     (if (string-match "^\\([^:\n]*\\)[:]\\(.*\\)$" page-name)
         (progn
@@ -949,9 +1016,11 @@ search results and loading the data into that page."
      ;; open an attachment
      ((cf-string-notempty attachment-name)
       (if (cf-string-empty page-name)
-          (setq page-name (cf-get-struct-value 
-                           confluence-page-struct "title")))
-      (confluence-get-attachment page-name space-name attachment-name))
+          (progn
+            (setq page-name (cf-get-struct-value 
+                             confluence-page-struct "title"))
+            (setq page-id confluence-page-id)))
+      (confluence-get-attachment page-name space-name attachment-name page-id))
      ;; goto anchor in this page
      ((and (cf-string-notempty anchor-name)
            (cf-string-empty page-name))
@@ -989,6 +1058,178 @@ buffer."
                (cf-string-notempty parent-page-name))
           (cf-get-struct-value (cf-rpc-get-page-by-name parent-space-name parent-page-name) "id")
         nil))))
+
+(defun cf-insert-attachment (page-name space-name file-name page-id 
+                             result-buffer save-only-file-name)
+  "Downloads and inserts the attachment with the given info into the given
+RESULT-BUFFER for viewing (created if nil).  If SAVE-ONLY-FILE-NAME is
+non-nil, the attachment will instead be saved to this file name and not
+viewed."
+  ;; we use lexical-let so the lambda form below can easily interact with the
+  ;; variables defined here
+  (lexical-let ((retrieval-done nil)
+		(asynch-buffer nil)
+                (download-error nil)
+                (tmp-coding-system (coding-system-base (cf-get-struct-value confluence-coding-alist (cf-get-url) 'utf-8)))
+                (attachment-version nil)
+                (was-buffer-created (not result-buffer)))
+
+    ;; find current version of attachment (this is hacked cause the rpc api
+    ;; does not provide this directly.  yes, this is a bug)
+    (let* ((url-show-status nil)
+           (attachment-url (cf-get-struct-value 
+                            (cf-get-attachment-info page-id file-name)
+                            "url")))
+      (if (string-match "[?&]version=\\([0-9]+\\)" attachment-url)
+          (setq attachment-version (match-string 1 attachment-url))
+        (error "Could not find version for attachment %s" file-name)))
+    
+    ;; create result buffer if necessary
+    (if (not result-buffer)
+        (setq result-buffer (get-buffer-create 
+                             (cf-format-attachment-buffer-name 
+                              file-name page-name space-name))))
+
+    ;; prep result buffer
+    (with-current-buffer result-buffer
+      (widen)
+      (erase-buffer)
+      (kill-all-local-variables)
+      ;; save load-info so we can revert the buffer using our custom
+      ;; revert-buffer-function
+      (setq confluence-load-info 
+            (list 'attachment (cf-get-url) page-id space-name page-name
+                  file-name))
+      (make-local-variable 'revert-buffer-function)
+      (setq revert-buffer-function 'cf-revert-page)
+      (if (not buffer-file-name)
+          (setq buffer-file-name 
+                (or save-only-file-name
+                    (cf-create-temp-attachment-file file-name)))))
+
+    ;; start async attachment download
+    (setq asynch-buffer
+          (cf-rpc-execute-async 
+           (lambda ()
+             (unwind-protect
+                 (condition-case err
+                     (cf-attachment-download-callback result-buffer 
+                                                      tmp-coding-system)
+                   (error
+                    (setq download-error (error-message-string err))))
+               (setq retrieval-done t
+                     asynch-buffer (current-buffer))))
+           'confluence1.getAttachmentData 
+           page-id file-name attachment-version))
+
+    ;; wait for download to finish (this logic ripped from
+    ;; url-retrieve-synchronously)
+    (let ((proc (and asynch-buffer (get-buffer-process asynch-buffer))))
+      (if (null proc)
+	  nil
+	(while (not retrieval-done)
+	  (if (memq (process-status proc) '(closed exit signal failed))
+              (setq retrieval-done t)
+            (unless (accept-process-output proc)
+              (setq proc (get-buffer-process asynch-buffer)))))))
+
+    ;; just bailout if the download failed
+    (if download-error
+        (progn
+          (if was-buffer-created
+              (kill-buffer result-buffer))
+          (error download-error)))
+
+    (if save-only-file-name
+        ;; if we are not viewing the file, save the result buffer and then
+        ;; kill it
+        (progn
+          (with-current-buffer result-buffer
+            (let ((save-buffer-coding-system 'utf-8))
+              (basic-save-buffer)))
+          (if was-buffer-created
+              (kill-buffer result-buffer))
+          (setq result-buffer nil)
+          (message "File successfully downloaded to %s" save-only-file-name))
+      ;; otherwise, prep the buffer for viewing
+      (with-current-buffer result-buffer
+        (set-buffer-modified-p nil)
+        (set-auto-mode)
+        (goto-char (point-min))))
+
+    result-buffer))
+
+(defun cf-attachment-download-callback (result-buffer decode-coding-system)
+  "Handles an attachment xml-rpc download result buffer.  Copies the
+attachment data to the given RESULT-BUFFER (base64 decoding or entity decoding
+using the DECODE-CODING-SYSTEM if necessary)."
+  (url-mark-buffer-as-dead (current-buffer))
+  (if (not (numberp url-http-response-status))
+      (error "Why? url-http-response-status is %s"
+             url-http-response-status))
+  (if (> url-http-response-status 299)
+      (error "Error during request: %s"
+             url-http-response-status))
+  (goto-char (point-min))
+  (let ((value-start nil)
+        (value-end nil)
+        (base64-encoded nil)
+        (case-fold-search t))
+    (if (re-search-forward "<value>\\(<base64>\\)?" nil t)
+        (progn
+          (if (match-string 1)
+              (setq base64-encoded t))
+          (setq value-start (match-end 0)))
+      (error "Could not find (start) attachment data"))
+    (if (re-search-forward "\\(</base64>\\)</value>" nil t)
+        (setq value-end (match-beginning 0))
+      (error "Could not find (end) attachment data"))
+    (copy-to-buffer result-buffer value-start value-end)
+    (with-current-buffer result-buffer
+      (if base64-encoded
+          ;; if result was base64 encoded, just decode that
+          (base64-decode-region (point-min) (point-max))
+        ;; otherwise, we need to do entity decoding
+        (let ((confluence-coding-system (coding-system-change-eol-conversion
+                                         decode-coding-system 'unix))
+              (confluence-coding-prefix 
+               (cf-get-struct-value confluence-coding-prefix-alist
+                                    decode-coding-system ""))
+              (confluence-coding-num-bytes 
+               (cf-get-struct-value confluence-coding-bytes-per-char-alist
+                                    decode-coding-system 1)))
+          (cf-url-decode-entities-in-buffer result-buffer))))))
+
+(defun cf-get-attachment-info (page-id file-name)
+  "Retrieves the attachment info for the attachment with the given FILE-NAME
+on page PAGE-ID."
+  (catch 'attachment-el
+    (dolist (attachment (cf-rpc-get-attachments page-id))
+      (if (equal (cf-get-struct-value attachment "fileName") file-name)
+          (throw 'attachment-el attachment)))
+    (error "Could not find attachment with name %s" file-name)))
+
+
+(defun cf-format-attachment-buffer-name (file-name page-name space-name)
+  "Creates a buffer name for an attachment with the given info."
+  (if (and (cf-string-notempty page-name)
+           (cf-string-notempty space-name))
+      (format "%s<%s/%s>" file-name space-name page-name)
+    file-name))
+
+(defun cf-create-temp-attachment-file (file-name)
+  "Creates a temporary file name for an attachment with the given info with
+the pattern '<temp-dir>/<file-prefix>-<temp-id>.<file-ext>'."
+  (save-match-data
+  (let ((prefix file-name)
+        (suffix ""))
+    (if (string-match "^\\([^.]+\\)\\([.].*\\)$" file-name)
+        (progn
+          (setq prefix (match-string 1 file-name))
+          (setq suffix (match-string 2 file-name))))
+    (concat (make-temp-name
+             (expand-file-name (concat prefix "-") temporary-file-directory))
+            suffix))))
 
 (defun cf-prompt-page-info (prompt-prefix page-name-var space-name-var)
   "Prompts for page info using the appropriate input function and sets the given vars appropriately."
@@ -1148,13 +1389,7 @@ given STRUCT-VAR."
   (if (not current-other-completions)
       (with-current-buffer completion-buffer
         (setq current-other-completions (cf-result-to-completion-list (cf-rpc-get-spaces) "key"))))
-  (cond
-   ((not comp-flag)
-    (or (try-completion comp-str current-other-completions pred) comp-str))
-   ((eq comp-flag t)
-    (or (all-completions comp-str current-other-completions pred) (list comp-str)))
-   ((eq comp-flag 'lambda)
-    (and (assoc comp-str current-other-completions) t))))
+  (cf-complete comp-str pred comp-flag current-other-completions))
 
 (defun cf-complete-page-name (comp-str pred comp-flag)
   "Completion function for confluence pages."
@@ -1200,13 +1435,7 @@ given STRUCT-VAR."
             (setq current-completions old-current-completions))
         )))
   
-  (cond
-   ((not comp-flag)
-    (or (try-completion comp-str current-completions pred) comp-str))
-   ((eq comp-flag t)
-    (or (all-completions comp-str current-completions pred) (list comp-str)))
-   ((eq comp-flag 'lambda)
-    (and (assoc comp-str current-completions) t))))
+  (cf-complete comp-str pred comp-flag current-completions))
 
 (defun cf-complete-page-path (comp-str pred comp-flag)
   "Completion function for confluence page paths."
@@ -1234,13 +1463,7 @@ given STRUCT-VAR."
       (with-current-buffer completion-buffer
         (setq current-completions (cf-result-to-completion-list (cf-rpc-get-recent-labels
                                                                  confluence-max-completion-results) "name"))))
-  (cond
-   ((not comp-flag)
-    (or (try-completion comp-str current-completions pred) comp-str))
-   ((eq comp-flag t)
-    (or (all-completions comp-str current-completions pred) (list comp-str)))
-   ((eq comp-flag 'lambda)
-    (and (assoc comp-str current-completions) t))))
+  (cf-complete comp-str pred comp-flag current-completions))
 
 (defun cf-complete-anchor-name (comp-str pred comp-flag)
   "Completion function for confluence anchors."
@@ -1250,13 +1473,25 @@ given STRUCT-VAR."
           (goto-char (point-min))
           (while (re-search-forward "{anchor:\\([^{}\n]+\\)}" nil t)
             (push (cons (match-string 1) t) current-completions)))))
+  (cf-complete comp-str pred comp-flag current-completions))
+
+(defun cf-complete-attachment-name (comp-str pred comp-flag)
+  "Completion function for confluence attachments."
+  (if (not current-completions)
+      (with-current-buffer completion-buffer
+        (setq current-completions (cf-result-to-completion-list (cf-rpc-get-attachments
+                                                                 confluence-page-id) "fileName"))))
+  (cf-complete comp-str pred comp-flag current-completions))
+
+(defun cf-complete (comp-str pred comp-flag comp-table)
+  "Executes completion for the given args and COMP-TABLE."
   (cond
    ((not comp-flag)
-    (or (try-completion comp-str current-completions pred) comp-str))
+    (or (try-completion comp-str comp-table pred) comp-str))
    ((eq comp-flag t)
-    (or (all-completions comp-str current-completions pred) (list comp-str)))
+    (or (all-completions comp-str comp-table pred) (list comp-str)))
    ((eq comp-flag 'lambda)
-    (and (assoc comp-str current-completions) t))))
+    (and (assoc comp-str comp-table) t))))
 
 (defun cf-update-buffer-name ()
   "Sets the buffer name based on the buffer info if it is a page buffer."
@@ -1319,37 +1554,48 @@ something else."
 	(erase-buffer)
 	(buffer-disable-undo (current-buffer))
 	(insert string)
-	(goto-char (point-min))
-        (while (re-search-forward "&\\([^;\n]+\\);" nil t)
-          (let ((ent-str (match-string 1))
-                (ent-point (match-beginning 1)))
-            (replace-match 
-             (cond
-              ;; simple xml entities
-              ((cdr-safe (assoc ent-str
-                                '(("quot" . "\"")
-                                  ("amp" . "&")
-                                  ("lt" . "<")
-                                  ("gt" . ">")))))
-              ;; decimal number character entities
-              ((save-match-data
-                 (and (string-match "^#\\([0-9]+\\)$" ent-str)
-                      (cf-number-entity-to-string (string-to-number (match-string 1 ent-str))))))
-              ;; hexidecimal number character entities
-              ((save-match-data
-                 (and (string-match "^#x\\([0-9A-Fa-f]+\\)$" ent-str)
-                      (cf-number-entity-to-string (string-to-number (match-string 1 ent-str) 16)))))
-              ;; unknown entity
-              (t (concat "&" ent-str ";")))
-             t t)
-            (goto-char ent-point)))
+        (cf-url-decode-entities-in-buffer (current-buffer))
 
-	(goto-char (point-min))
         ;; always convert to unix newlines
+	(goto-char (point-min))
         (while (re-search-forward "\r\n" nil t)
           (replace-match "\n" t t))
 	(buffer-string))
     string))
+
+(defun cf-url-decode-entities-in-buffer (decode-buffer)
+  "Convert XML entities to string values:
+    &amp;    ==>  &
+    &lt;     ==>  <
+    &gt;     ==>  >
+    &quot;   ==>  \"
+    &#[0-9]+ ==>  <appropriate char>"
+  (save-excursion
+    (set-buffer decode-buffer)
+    (goto-char (point-min))
+    (while (re-search-forward "&\\([^;\n]+\\);" nil t)
+      (let ((ent-str (match-string 1))
+            (ent-point (match-beginning 1)))
+        (replace-match 
+         (cond
+          ;; simple xml entities
+          ((cdr-safe (assoc ent-str
+                            '(("quot" . "\"")
+                              ("amp" . "&")
+                              ("lt" . "<")
+                              ("gt" . ">")))))
+          ;; decimal number character entities
+          ((save-match-data
+             (and (string-match "^#\\([0-9]+\\)$" ent-str)
+                  (cf-number-entity-to-string (string-to-number (match-string 1 ent-str))))))
+          ;; hexidecimal number character entities
+          ((save-match-data
+             (and (string-match "^#x\\([0-9A-Fa-f]+\\)$" ent-str)
+                  (cf-number-entity-to-string (string-to-number (match-string 1 ent-str) 16)))))
+          ;; unknown entity
+          (t (concat "&" ent-str ";")))
+         t t)
+        (goto-char ent-point)))))
 
 (defun cf-number-entity-to-string (num)
   "Convert an xml number entity to the appropriate character using the current `confluence-coding-system' (which is

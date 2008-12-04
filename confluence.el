@@ -249,6 +249,9 @@ for most coding systems.")
 (defvar confluence-label-history nil
   "History labels used.")
 
+(defvar confluence-attachment-history nil
+  "History labels used.")
+
 (defvar confluence-page-url nil
   "The url used to load the current buffer.")
 (make-variable-buffer-local 'confluence-page-url)
@@ -362,12 +365,13 @@ switches to it."
       (cf-show-page (cf-rpc-get-page-by-id parent-page-id)))))
 
 (defun confluence-get-attachment (&optional page-name space-name file-name 
-                                  page-id)
+                                            page-id)
   "Gets the attachment with the given info and optionally displaying it in a
 buffer for viewing or downloading it to a local file."
   (interactive)
   ;; get page and space names if not given
-  (cf-prompt-page-info nil 'page-name 'space-name)
+  (cf-prompt-page-info "Attachment " 'page-name 'space-name
+                       (cf-get-struct-value confluence-page-struct "title"))
   ;; find page-id if not given
   (if (not page-id)
       (let ((url-show-status nil))
@@ -375,23 +379,26 @@ buffer for viewing or downloading it to a local file."
                                             space-name page-name) "id"))))
   ;; get file name if not given
   (if (not file-name)
+      ;; FIXME, get attachments before proceeding (stop if none, like remove label)
       (setq file-name (cf-read-string-simple "Confluence attachment file name: " 'confluence-attachment-history 'cf-complete-attachment-name t)))
 
-  (let ((save-only-file-name nil)
-        (result-buffer nil))
-    ;; determine if caller wants to view the file or merely download it
-    (if (equal "d"
-               (cf-read-string-simple "View confluence attachment (v) or download only (d) [v]: " nil '(("v" . t) ("d" . t)) t nil "v"))
-        (setq save-only-file-name (expand-file-name 
-                                   (read-file-name "Download file name: " 
-                                                   nil file-name))))
-    ;; download attachment
-    (setq result-buffer
-          (cf-insert-attachment page-name space-name file-name page-id nil 
-                                save-only-file-name))
-    ;; if a result was returned, the caller wanted to view the buffer
-    (if result-buffer
-        (switch-to-buffer result-buffer))))
+  (if (and (cf-string-notempty page-id)
+           (cf-string-notempty file-name))
+      (let ((save-only-file-name nil)
+            (result-buffer nil))
+        ;; determine if caller wants to view the file or merely download it
+        (if (equal "d"
+                   (cf-read-string-simple "View confluence attachment (v) or download only (d) [v]: " nil '(("v" . t) ("d" . t)) t nil "v"))
+            (setq save-only-file-name (expand-file-name 
+                                       (read-file-name "Download file name: " 
+                                                       nil file-name))))
+        ;; download attachment
+        (setq result-buffer
+              (cf-insert-attachment page-name space-name file-name page-id nil 
+                                    save-only-file-name))
+        ;; if a result was returned, the caller wanted to view the buffer
+        (if result-buffer
+            (switch-to-buffer result-buffer)))))
 
 (defun confluence-get-attachment-with-url (&optional arg)
   "With ARG, prompts for the confluence url to use for the get
@@ -1231,15 +1238,15 @@ the pattern '<temp-dir>/<file-prefix>-<temp-id>.<file-ext>'."
              (expand-file-name (concat prefix "-") temporary-file-directory))
             suffix))))
 
-(defun cf-prompt-page-info (prompt-prefix page-name-var space-name-var)
+(defun cf-prompt-page-info (prompt-prefix page-name-var space-name-var &optional def-page-name)
   "Prompts for page info using the appropriate input function and sets the given vars appropriately."
   (let ((result-list
          (funcall confluence-prompt-page-function prompt-prefix
-                  (symbol-value page-name-var) (symbol-value space-name-var))))
+                  (symbol-value page-name-var) (symbol-value space-name-var) def-page-name)))
     (set page-name-var (nth 0 result-list))
     (set space-name-var (nth 1 result-list))))
 
-(defun cf-prompt-page-by-component (prompt-prefix page-name space-name)
+(defun cf-prompt-page-by-component (prompt-prefix page-name space-name def-page-name)
   "Builds a list of (page-name space-name <url>) by prompting the user for each.  Suitable for use with
 `confluence-prompt-page-function'."
   (let ((result-list nil))
@@ -1251,10 +1258,10 @@ the pattern '<temp-dir>/<file-prefix>-<temp-id>.<file-ext>'."
         (setq space-name (cf-prompt-space-name prompt-prefix)))
     (push space-name result-list)
     (push (or page-name
-              (cf-prompt-page-name space-name prompt-prefix)) result-list)
+              (cf-prompt-page-name space-name prompt-prefix def-page-name)) result-list)
     result-list))
 
-(defun cf-prompt-page-by-path (prompt-prefix page-name space-name)
+(defun cf-prompt-page-by-path (prompt-prefix page-name space-name def-page-name)
   "Builds a list of (page-name space-name <url>) by prompting the user for each (where page and space name are
 specified as one path).  Suitable for use with `confluence-prompt-page-function'."
   (let ((result-list nil)
@@ -1266,7 +1273,7 @@ specified as one path).  Suitable for use with `confluence-prompt-page-function'
     (if (and page-name space-name)
         (setq result-list (cons page-name (cons space-name result-list)))
       (progn
-        (setq page-path (cf-prompt-path prompt-prefix page-name space-name))
+        (setq page-path (cf-prompt-path prompt-prefix page-name space-name def-page-name))
         ;; split path into space and page
         (push (cf-get-space-name-from-path page-path) result-list)
         (push (cf-get-page-name-from-path page-path) result-list)))
@@ -1280,28 +1287,36 @@ specified as one path).  Suitable for use with `confluence-prompt-page-function'
 
 (defun cf-prompt-space-name (&optional prompt-prefix)
   "Prompts for a confluence space name."
-  (let* ((def-space (cf-get-default-space))
-         (space-prompt (if def-space
-                           (format "Confluence Space [%s]: " def-space)
+  (let* ((def-space-name (cf-get-default-space))
+         (init-space-name (cf-get-struct-value confluence-page-struct "space"))
+         (space-prompt (if def-space-name
+                           (format "Confluence Space [%s]: " def-space-name)
                          "Confluence Space: ")))
     (cf-read-string prompt-prefix space-prompt 'confluence-space-history
                     (cf-get-url)
                     'cf-complete-space-name t
-                    (cf-get-struct-value confluence-page-struct "space") 
-                    def-space)))
+                    (if (not (equal init-space-name def-space-name))
+                        init-space-name
+                      nil)
+                    def-space-name)))
 
-(defun cf-prompt-page-name (space-name &optional prompt-prefix)
+(defun cf-prompt-page-name (space-name &optional prompt-prefix def-page-name)
   "Prompts for a confluence page name."
-  (cf-read-string prompt-prefix "Confluence Page Name: " 
-                  'confluence-page-history (cons space-name (cf-get-url))
-                  'cf-complete-page-name nil))
+  (let ((page-prompt (if def-page-name
+                         (format "Confluence Page Name [%s]: " def-page-name)
+                       "Confluence Page Name: ")))
+    (cf-read-string prompt-prefix page-prompt
+                    'confluence-page-history (cons space-name (cf-get-url))
+                    'cf-complete-page-name nil nil def-page-name)))
 
-(defun cf-prompt-path (prompt-prefix page-name space-name)
+(defun cf-prompt-path (prompt-prefix page-name space-name def-page-name)
   "Prompts for a confluence page path."
   (cf-read-string prompt-prefix "Confluence Space/PageName: "
                   'confluence-path-history (cf-get-url)
                   'cf-complete-page-path nil
-                  (if space-name (concat space-name "/") nil)))
+                  (if space-name
+                      (concat space-name "/" (or def-page-name ""))
+                    nil)))
 
 (defun cf-read-string (prompt-prefix prompt hist-alist-var hist-key 
                        comp-func-or-table &optional
@@ -1664,7 +1679,7 @@ set by `cf-rpc-execute-internal')."
      (1 'font-lock-comment-face prepend))
   
    ;; bold
-   '("[ ][*]\\([^*\n]+\\)[*][ ]"
+   '("[^[:word:]\\][*]\\([^*\n]+\\)[*]\\W"
      (1 'bold))
    
    ;; code
@@ -1672,15 +1687,17 @@ set by `cf-rpc-execute-internal')."
      (1 'confluence-code-face t))
    
    ;; italics/emphasised
-   '("[ ]_\\([^_\n]+\\)_[ ]"
+   '("[^[:word:]\\]_\\([^_\n]+\\)_\\W"
+     (1 'italic prepend))
+   '("[^[:word:]\\][?]\\{2\\}\\([^?\n]+\\)[?]\\{2\\}\\W"
      (1 'italic prepend))
 
    ;; underline
-   '("[ ][+]\\([^+\n]+\\)[+][ ]"
+   '("[^[:word:]\\][+]\\([^+\n]+\\)[+]\\W"
      (1 'underline prepend))
 
    ;; strike-through
-   '("[ ][-]\\([^-\n]+\\)[-][ ]"
+   '("[^[:word:]\\][-]\\([^-\n]+\\)[-]\\W"
      (1 '(:strike-through t) prepend))
 
    ;; headings
@@ -1694,7 +1711,7 @@ set by `cf-rpc-execute-internal')."
      (1 'underline prepend))
 
    ;; bullet points
-   '("^\\([*#]+\\)[ ]"
+   '("^\\([*#]+\\)\\s-"
      (1 'font-lock-constant-face))
    
    ;; links
@@ -1753,13 +1770,17 @@ set by `cf-rpc-execute-internal')."
   ;; FIXME, should we support local backup files?
   (make-local-variable 'make-backup-files)
   (setq make-backup-files nil)
+  (make-local-variable 'words-include-escapes)
+  (setq words-include-escapes t)
   (add-hook 'write-contents-hooks 'cf-save-page)
   ;; we set this to some nonsense so save-buffer works
   (setq buffer-file-name (expand-file-name (concat "." (buffer-name)) "~/"))
+  (set-syntax-table (make-syntax-table (syntax-table)))
+  (modify-syntax-entry ?\\ "\\")
   (setq font-lock-defaults
         '((confluence-font-lock-keywords confluence-font-lock-keywords-1
                                          confluence-font-lock-keywords-2)
-          nil nil nil nil))
+          nil nil nil nil (font-lock-multiline . t)))
 )
 
 (defvar confluence-prefix-map

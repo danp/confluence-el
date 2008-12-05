@@ -1789,27 +1789,6 @@ set by `cf-rpc-execute-internal')."
   "Default expressions to highlight in Confluence modes.")
 
 
-(define-derived-mode confluence-mode text-mode "Confluence"
-  "Set major mode for editing Confluence Wiki pages."
-  (turn-off-auto-fill)
-  (make-local-variable 'revert-buffer-function)
-  (setq revert-buffer-function 'cf-revert-page)
-  ;; FIXME, should we support local backup files?
-  (make-local-variable 'make-backup-files)
-  (setq make-backup-files nil)
-  (make-local-variable 'words-include-escapes)
-  (setq words-include-escapes t)
-  (add-hook 'write-contents-hooks 'cf-save-page)
-  ;; we set this to some nonsense so save-buffer works
-  (setq buffer-file-name (expand-file-name (concat "." (buffer-name)) "~/"))
-  (set-syntax-table (make-syntax-table (syntax-table)))
-  (modify-syntax-entry ?\\ "\\")
-  (setq font-lock-defaults
-        '((confluence-font-lock-keywords confluence-font-lock-keywords-1
-                                         confluence-font-lock-keywords-2)
-          nil nil nil nil (font-lock-multiline . t)))
-)
-
 (defvar confluence-prefix-map
   (let ((map (make-sparse-keymap)))
     (define-key map "f" 'confluence-get-page)
@@ -1896,12 +1875,34 @@ bullets if DEPTH is negative (does nothing if DEPTH is 0)."
         (delete-region tmp-point (point))
         (insert-before-markers indent-str))))))
 
+(define-derived-mode confluence-mode text-mode "Confluence"
+  "Set major mode for editing Confluence Wiki pages."
+  (turn-off-auto-fill)
+  (make-local-variable 'revert-buffer-function)
+  (setq revert-buffer-function 'cf-revert-page)
+  ;; FIXME, should we support local backup files?
+  (make-local-variable 'make-backup-files)
+  (setq make-backup-files nil)
+  (make-local-variable 'words-include-escapes)
+  (setq words-include-escapes t)
+  (add-hook 'write-contents-hooks 'cf-save-page)
+  ;; we set this to some nonsense so save-buffer works
+  (setq buffer-file-name (expand-file-name (concat "." (buffer-name)) "~/"))
+  (set-syntax-table (make-syntax-table (syntax-table)))
+  (modify-syntax-entry ?\\ "\\")
+  (setq font-lock-defaults
+        '((confluence-font-lock-keywords confluence-font-lock-keywords-1
+                                         confluence-font-lock-keywords-2)
+          nil nil nil nil (font-lock-multiline . t)))
+)
+
+
 ;; TODO 
 ;; - add "backup" support (save to restore from local file)?
 ;; - extended link support
 ;;   - attachement support (getAttachments for page)
 ;;     - list attachments page (like search page)
-;;   - image support via create-image/insert-image
+;;   - image support via create-image/insert-image or auto-image-file-mode
 ;;   - [$id] links?
 ;; - add more label support?
 ;; - add more structured browsing?

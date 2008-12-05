@@ -347,16 +347,30 @@ opens the page using `browse-url', otherwise attempts to load it as a
 confluence page.  Analogous to M-. (`find-tag').  Any ARG is passed to
 `confluence-get-page-with-url' if nothing is found at point."
   (interactive "P")
-  (if (thing-at-point-looking-at "\\[\\(\\([^|\n]*\\)[|]\\)?\\([^]\n]+\\)\\]")
-      (let ((url (match-string 3)))
-        (set-text-properties 0 (length url) nil url)
-        (if (string-match thing-at-point-url-regexp url)
-            (browse-url url)
-          (if confluence-browse-function
-              (funcall confluence-browse-function url)
-            (cf-simple-browse-function url))))
-    (if (thing-at-point 'url)
-        (browse-url-at-point)
+  (let ((url nil)
+        (is-embedded-content nil))
+    ;; look for normal links, image/embedded content links, or raw links
+    (cond
+     ((thing-at-point-looking-at "\\[\\(\\([^|\n]*\\)[|]\\)?\\([^]\n]+\\)\\]")
+      (setq url (match-string 3)))
+     ((thing-at-point-looking-at "[!]\\([^]|\n]+\\)\\([|]\\([^]\n]*\\)\\)?[!]")
+      (setq url (match-string 1))
+      (setq is-embedded-content t))
+     ((thing-at-point-looking-at thing-at-point-url-regexp)
+      (setq url (match-string 0))))
+    ;; determine how to handle the link (may be straight-up url)
+    (if url
+        (progn
+          (set-text-properties 0 (length url) nil url)
+          (if (string-match thing-at-point-url-regexp url)
+              (browse-url url)
+            (progn
+              (if (and is-embedded-content (not (string-match "\\^" url)))
+                  ;; embedded content links are really just attachments
+                  (setq url (concat "^" url)))
+              (if confluence-browse-function
+                  (funcall confluence-browse-function url)
+                (cf-simple-browse-function url)))))
       (confluence-get-page-with-url arg))))
 
 (defun confluence-get-parent-page ()
@@ -1688,7 +1702,7 @@ set by `cf-rpc-execute-internal')."
      (1 'font-lock-comment-face prepend))
   
    ;; bold
-   '("[^[:word:]\\][*]\\([^*\n]+\\)[*]\\W"
+   '("[^[:word:]\\*][*]\\([^*\n]+\\)[*]\\W"
      (1 'bold))
    
    ;; code
@@ -1724,7 +1738,7 @@ set by `cf-rpc-execute-internal')."
      (1 'font-lock-constant-face))
    
    ;; links
-   '("\\(\\[\\)\\([^|\n]*\\)[|]\\([^]]+\\)\\(\\]\\)"
+   '("\\(\\[\\)\\([^|\n]*\\)[|]\\([^]\n]+\\)\\(\\]\\)"
      (1 'font-lock-constant-face)
      (2 'font-lock-string-face)
      (3 'underline)
@@ -1737,9 +1751,13 @@ set by `cf-rpc-execute-internal')."
      (1 'font-lock-string-face))
 
    ;; images, embedded content
-   '("\\([!]\\)\\([^!\n]+\\)\\([!]\\)"
+   '("\\([!]\\)\\([^|\n]+\\)[|]\\(?:[^!\n]*\\)\\([!]\\)"
      (1 'font-lock-constant-face)
-     (2 'font-lock-reference-face)
+     (2 '(font-lock-reference-face underline))
+     (3 'font-lock-constant-face))
+   '("\\([!]\\)\\([^!|\n]+\\)\\([!]\\)"
+     (1 'font-lock-constant-face)
+     (2 '(font-lock-reference-face underline))
      (3 'font-lock-constant-face))
    
    ;; tables

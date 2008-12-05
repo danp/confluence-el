@@ -1895,6 +1895,19 @@ bullets if DEPTH is negative (does nothing if DEPTH is 0)."
                       ""))))
         (delete-region tmp-point (point))
         (insert-before-markers indent-str))))))
-  
+
+;; TODO 
+;; - add "backup" support (save to restore from local file)?
+;; - extended link support
+;;   - attachement support (getAttachments for page)
+;;     - list attachments page (like search page)
+;;   - image support via create-image/insert-image
+;;   - [$id] links?
+;; - add more label support?
+;; - add more structured browsing?
+;; - funky searches:
+;;   - labelText:<label>
+;;   - title:<title> -- completion
+
 (provide 'confluence)
 ;;; confluence.el ends here

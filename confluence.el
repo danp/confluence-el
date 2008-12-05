@@ -1804,6 +1804,9 @@ set by `cf-rpc-execute-internal')."
     (define-key map "." 'confluence-get-page-at-point)
     (define-key map "*" 'confluence-pop-tag-stack)
     (define-key map "v" 'confluence-preview)
+    (define-key map "a" 'confluence-get-attachment)
+    (define-key map "la" 'confluence-add-label)
+    (define-key map "lr" 'confluence-remove-label)
     map)
   "Keybinding prefix map which can be bound for common functions in confluence mode.")
 

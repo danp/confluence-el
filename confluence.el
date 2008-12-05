@@ -291,6 +291,11 @@ for most coding systems.")
 (defvar confluence-switch-url nil)
 (defvar confluence-completing-read nil)
 
+(defmacro with-quiet-rpc (&rest body)
+  "Execute the forms in BODY with `url-show-status' set to nil."
+  `(let ((url-show-status nil))
+     ,@body))
+  
 (defun confluence-login (&optional arg)
   "Logs into the current confluence url, if necessary.  With ARG, forces
 re-login to the current url."
@@ -374,13 +379,17 @@ buffer for viewing or downloading it to a local file."
                        (cf-get-struct-value confluence-page-struct "title"))
   ;; find page-id if not given
   (if (not page-id)
-      (let ((url-show-status nil))
+      (with-quiet-rpc
         (setq page-id (cf-get-struct-value (cf-rpc-get-page-by-name
                                             space-name page-name) "id"))))
   ;; get file name if not given
   (if (not file-name)
-      ;; FIXME, get attachments before proceeding (stop if none, like remove label)
-      (setq file-name (cf-read-string-simple "Confluence attachment file name: " 'confluence-attachment-history 'cf-complete-attachment-name t)))
+      (let ((cur-attachments (with-quiet-rpc
+                              (cf-result-to-completion-list
+                               (cf-rpc-get-attachments page-id) "fileName"))))
+        (if (= (length cur-attachments) 0)
+            (message "Current page has no attachments...")
+          (setq file-name (cf-read-string-simple "Confluence attachment file name: " 'confluence-attachment-history cur-attachments t)))))
 
   (if (and (cf-string-notempty page-id)
            (cf-string-notempty file-name))
@@ -568,8 +577,8 @@ latest version of that page saved in confluence."
   (if confluence-page-id
       (progn
         (if (not label-name)
-          (let* ((url-show-status nil)
-                 (cur-labels (cf-result-to-completion-list (cf-rpc-get-labels confluence-page-id) "name")))
+          (let ((cur-labels (with-quiet-rpc
+                             (cf-result-to-completion-list (cf-rpc-get-labels confluence-page-id) "name"))))
             (if (= (length cur-labels) 0)
                 (message "Current page has no labels...")
               (progn
@@ -1083,10 +1092,10 @@ viewed."
 
     ;; find current version of attachment (this is hacked cause the rpc api
     ;; does not provide this directly.  yes, this is a bug)
-    (let* ((url-show-status nil)
-           (attachment-url (cf-get-struct-value 
+    (let ((attachment-url (with-quiet-rpc
+                           (cf-get-struct-value 
                             (cf-get-attachment-info page-id file-name)
-                            "url")))
+                            "url"))))
       (if (string-match "[?&]version=\\([0-9]+\\)" attachment-url)
           (setq attachment-version (match-string 1 attachment-url))
         (error "Could not find version for attachment %s" file-name)))
@@ -1342,13 +1351,13 @@ specified as one path).  Suitable for use with `confluence-prompt-page-function'
   (let ((current-completions nil)
         (current-other-completions nil)
         (last-comp-str nil)
-        (url-show-status nil)
         (completion-buffer (or (and (boundp 'completion-buffer)
                                     completion-buffer)
                                (current-buffer)))
         (confluence-completing-read t))
-    (completing-read prompt comp-func-or-table
-                     nil require-match init-val hist-list-var def-val t)))
+    (with-quiet-rpc
+     (completing-read prompt comp-func-or-table
+                      nil require-match init-val hist-list-var def-val t))))
 
 (defun cf-minibuffer-setup ()
   "Minibuffer setup hook which changes some keybindings for confluence completion."

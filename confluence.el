@@ -713,7 +713,7 @@ on `confluence-default-space-alist')."
         (with-current-buffer render-buf
           (widen)
           (erase-buffer)
-          (kill-all-local-variables)
+          (fundamental-mode)
           (insert rendered-content)
           ;; fix bug in stylesheet
           (goto-char (point-min))
@@ -1146,7 +1146,7 @@ will instead be saved to this file name and not viewed."
     (with-current-buffer result-buffer
       (widen)
       (erase-buffer)
-      (kill-all-local-variables)
+      (fundamental-mode)
       ;; save load-info so we can revert the buffer using our custom
       ;; revert-buffer-function and push/pop
       (setq confluence-load-info load-info)
@@ -1190,10 +1190,12 @@ will instead be saved to this file name and not viewed."
     (with-current-buffer result-buffer
       (if save-only-file-name
           ;; if we are not viewing the file, just save the result buffer
-          (let ((save-buffer-coding-system 'utf-8))
-            (basic-save-buffer))
+          (let ((save-buffer-coding-system 'no-conversion)
+                (buffer-file-coding-system 'no-conversion)
+                (coding-system-for-write 'no-conversion)
+                (file-coding-system-alist nil))
+            (write-region (point-min) (point-max) buffer-file-name nil 'quiet))
         ;; otherwise, prep the buffer for viewing
-        (set-buffer-modified-p nil)
         (set-auto-mode)
         (goto-char (point-min))))))
 
@@ -1226,7 +1228,17 @@ using the DECODE-CODING-SYSTEM if necessary)."
     (with-current-buffer result-buffer
       (if base64-encoded
           ;; if result was base64 encoded, just decode that
-          (base64-decode-region (point-min) (point-max))
+          (let ((save-buffer-coding-system 'no-conversion)
+                (buffer-file-coding-system 'no-conversion)
+                (coding-system-for-write 'no-conversion)
+                (coding-system-for-read 'no-conversion)
+                (file-coding-system-alist nil)
+                (buf-is-multibyte enable-multibyte-characters))
+            (if buf-is-multibyte
+                (set-buffer-multibyte nil))
+            (base64-decode-region (point-min) (point-max))
+            (if buf-is-multibyte
+                (set-buffer-multibyte t)))
         ;; otherwise, we need to do entity decoding
         (let ((confluence-coding-system (coding-system-change-eol-conversion
                                          decode-coding-system 'unix))
@@ -1236,7 +1248,8 @@ using the DECODE-CODING-SYSTEM if necessary)."
               (confluence-coding-num-bytes 
                (cf-get-struct-value confluence-coding-bytes-per-char-alist
                                     decode-coding-system 1)))
-          (cf-url-decode-entities-in-buffer result-buffer))))))
+          (cf-url-decode-entities-in-buffer result-buffer)))
+      (set-buffer-modified-p nil))))
 
 (defun cf-get-attachment-info (page-id file-name)
   "Retrieves the attachment info for the attachment with the given FILE-NAME

@@ -526,7 +526,7 @@ the tags stack."
           load-info))
         ;; load an attachment
         ((eq page-type 'attachment)
-         (cf-show-attachment page-name space-name page-id-or-query nil))
+         (cf-show-attachment page-name space-name file-name page-id-or-query nil))
         (t
          (error "Invalid stack info")))
        (goto-char old-point)))))
@@ -1104,8 +1104,9 @@ attachment and loading the data if necessary."
     ;; data
     (unwind-protect
         (if (or save-only-file-name
-                (not (equal 
-                      (buffer-local-value 'confluence-load-info result-buffer)
+                (not (equal
+                      (with-current-buffer result-buffer
+                        confluence-load-info)
                       load-info)))
             (cf-insert-attachment page-name space-name file-name
                                   page-id result-buffer save-only-file-name

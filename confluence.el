@@ -290,6 +290,7 @@ for most coding systems.")
 (defvar confluence-input-url nil)
 (defvar confluence-switch-url nil)
 (defvar confluence-completing-read nil)
+(defvar confluence-no-push nil)
 
 (defmacro with-quiet-rpc (&rest body)
   "Execute the forms in BODY with `url-show-status' set to nil."
@@ -330,7 +331,7 @@ pop back out of to return back through your navigation path (with
 M-* `confluence-pop-tag-stack')."
   (interactive)
   (cf-prompt-page-info nil 'page-name 'space-name)
-  (cf-show-page (cf-rpc-get-page-by-name space-name page-name) nil 
+  (cf-show-page (cf-rpc-get-page-by-name space-name page-name) 
                 anchor-name))
 
 (defun confluence-get-page-with-url (&optional arg)
@@ -407,21 +408,15 @@ buffer for viewing or downloading it to a local file."
 
   (if (and (cf-string-notempty page-id)
            (cf-string-notempty file-name))
-      (let ((save-only-file-name nil)
-            (result-buffer nil))
+      (let ((save-only-file-name nil))
         ;; determine if caller wants to view the file or merely download it
         (if (equal "d"
                    (cf-read-string-simple "View confluence attachment (v) or download only (d) [v]: " nil '(("v" . t) ("d" . t)) t nil "v"))
             (setq save-only-file-name (expand-file-name 
                                        (read-file-name "Download file name: " 
                                                        nil file-name))))
-        ;; download attachment
-        (setq result-buffer
-              (cf-insert-attachment page-name space-name file-name page-id nil 
-                                    save-only-file-name))
-        ;; if a result was returned, the caller wanted to view the buffer
-        (if result-buffer
-            (switch-to-buffer result-buffer)))))
+        (cf-show-attachment page-name space-name file-name page-id 
+                           save-only-file-name))))
 
 (defun confluence-get-attachment-with-url (&optional arg)
   "With ARG, prompts for the confluence url to use for the get
@@ -473,17 +468,17 @@ macro, it intentionally binds named variables that match the
 structure of the stack entry.  The structure and the variable
 bindings are:
 
-  ((page-type confluence-input-url page-id-or-query &optional space-name) old-point)
+  ((page-type confluence-input-url page-id-or-query &optional 
+    space-name  page-name file-name) old-point)
 
-Each stack entry can be either the result of a search query (in
-which case page-type will be the symbol 'search or a page
-visitation (and page-type will be 'page).  page-id-or-query will
-be either a page-id or a query - depending on the type of stack
-entry (page or query).  space-name will be populated when
-page-type is 'search.
+old-point is the point on the page which was pushed.  The 
+preceding list of info is the laod-info described in 
+`cf-destructure-load-info'.
 "
   `(destructuring-bind
-       ((page-type confluence-input-url page-id-or-query &optional space-name) old-point)
+       ((page-type confluence-input-url page-id-or-query 
+         &optional space-name  page-name file-name) 
+        old-point)
        ,entry
      ,@body))
 
@@ -517,25 +512,29 @@ the tags stack."
   (interactive)
   (if (null confluence-tag-stack)
       (message "Stack is empty...")
-    (cf-destructure-tags-stack-entry
-        (pop confluence-tag-stack)
-      (cond 
-       ;; load a normal page by id
-       ((eq page-type 'page)
-        (cf-show-page (cf-rpc-get-page-by-id page-id-or-query) t))
-       ;; run a previous search query
-       ((eq page-type 'search)
-        (cf-show-search-results 
-         (cf-rpc-search page-id-or-query space-name)
-         load-info t))
-       (t
-        (error "Invalid stack info")))
-      (goto-char old-point))))
+    (let ((confluence-no-push t))
+      (cf-destructure-tags-stack-entry
+       (pop confluence-tag-stack)
+       (cond 
+        ;; load a normal page by id
+        ((eq page-type 'page)
+         (cf-show-page (cf-rpc-get-page-by-id page-id-or-query)))
+        ;; run a previous search query
+        ((eq page-type 'search)
+         (cf-show-search-results 
+          (cf-rpc-search page-id-or-query space-name)
+          load-info))
+        ;; load an attachment
+        ((eq page-type 'attachment)
+         (cf-show-attachment page-name space-name page-id-or-query nil))
+        (t
+         (error "Invalid stack info")))
+       (goto-char old-point)))))
 
 (defun confluence-push-tag-stack ()
   "Pushes the current page onto the visited stack if it is a confluence page."
   (interactive)
-  (if confluence-load-info
+  (if (and (not confluence-no-push) confluence-load-info)
       (push (list confluence-load-info (point)) confluence-tag-stack)))
 
 (defun confluence-ediff-merge-current-page ()
@@ -884,7 +883,7 @@ page."
   (if (and confluence-load-info
            (or noconfirm
                (yes-or-no-p "Revert confluence page? ")))
-      (progn
+      (let ((confluence-no-push t))
         ;; use the load-info to reload the page, so we can reload normal pages
         ;; and search pages
         (cf-destructure-load-info confluence-load-info
@@ -905,19 +904,19 @@ page."
                            (cf-read-string-simple "Revert attachment from Confluence download (d) or local file (f) [d]: " 
                             nil '(("d" . t) ("f" . t)) t nil "d")))
                 (cf-insert-attachment page-name space-name file-name 
-                                      page-id-or-query (current-buffer) nil)
+                                      page-id-or-query (current-buffer) nil
+                                      confluence-load-info)
               (let ((revert-buffer-function nil))
                 (revert-buffer arg t))))
            (t
             (error "Invalid load info")))))))
 
-(defun cf-show-page (full-page &optional no-push anchor-name)
+(defun cf-show-page (full-page &optional anchor-name)
   "Does the work of finding or creating a buffer for the given confluence page
 and loading the data if necessary."
-  (if (not no-push)
-      (confluence-push-tag-stack))
+  (confluence-push-tag-stack)
   ;; note, we save the current url as confluence-input-url in case the buffer
-  ;; has a different value locally from a previous searcg (this value will
+  ;; has a different value locally from a previous search (this value will
   ;; override it)
   (let* ((confluence-input-url (cf-get-url))
          (load-info (list 'page confluence-input-url (cf-get-struct-value full-page "id")))
@@ -975,11 +974,10 @@ information necessary to reload the page (if nil, normal page info is used)."
     (if was-read-only
         (toggle-read-only 1))))
 
-(defun cf-show-search-results (search-results load-info &optional no-push)
+(defun cf-show-search-results (search-results load-info)
   "Does the work of finding or creating a buffer for the given confluence
 search results and loading the data into that page."
-  (if (not no-push)
-      (confluence-push-tag-stack))
+  (confluence-push-tag-stack)
   ;; note, we save the current url as confluence-input-url in case the buffer
   ;; has a different value locally from a previous searcg (this value will
   ;; override it)
@@ -1089,20 +1087,49 @@ buffer."
           (cf-get-struct-value (cf-rpc-get-page-by-name parent-space-name parent-page-name) "id")
         nil))))
 
+(defun cf-show-attachment (page-name space-name file-name page-id 
+                           save-only-file-name)
+  "Does the work of finding or creating a buffer for the given confluence
+attachment and loading the data if necessary."
+  (confluence-push-tag-stack)
+  ;; note, we save the current url as confluence-input-url in case the buffer
+  ;; has a different value locally
+  (let* ((confluence-input-url (cf-get-url))
+         (load-info (list 'attachment confluence-input-url page-id
+                          space-name page-name file-name))
+         (result-buffer (get-buffer-create 
+                         (cf-format-attachment-buffer-name 
+                          file-name page-name space-name))))
+    ;; only insert the data if the buffer is new, otherwise just show current
+    ;; data
+    (unwind-protect
+        (if (or save-only-file-name
+                (not (equal 
+                      (buffer-local-value 'confluence-load-info result-buffer)
+                      load-info)))
+            (cf-insert-attachment page-name space-name file-name
+                                  page-id result-buffer save-only-file-name
+                                  load-info))
+      ;; on save only, kill temp buf
+      (if save-only-file-name
+          (kill-buffer result-buffer)))
+    ;; finish up
+    (if save-only-file-name
+        (message "File successfully downloaded to %s" save-only-file-name)
+      (switch-to-buffer result-buffer))))
+
 (defun cf-insert-attachment (page-name space-name file-name page-id 
-                             result-buffer save-only-file-name)
+                             result-buffer save-only-file-name load-info)
   "Downloads and inserts the attachment with the given info into the given
-RESULT-BUFFER for viewing (created if nil).  If SAVE-ONLY-FILE-NAME is
-non-nil, the attachment will instead be saved to this file name and not
-viewed."
+RESULT-BUFFER for viewing.  If SAVE-ONLY-FILE-NAME is non-nil, the attachment
+will instead be saved to this file name and not viewed."
   ;; we use lexical-let so the lambda form below can easily interact with the
   ;; variables defined here
   (lexical-let ((retrieval-done nil)
 		(asynch-buffer nil)
                 (download-error nil)
                 (tmp-coding-system (coding-system-base (cf-get-struct-value confluence-coding-alist (cf-get-url) 'utf-8)))
-                (attachment-version nil)
-                (was-buffer-created (not result-buffer)))
+                (attachment-version nil))
 
     ;; find current version of attachment (this is hacked cause the rpc api
     ;; does not provide this directly.  yes, this is a bug)
@@ -1114,22 +1141,14 @@ viewed."
           (setq attachment-version (match-string 1 attachment-url))
         (error "Could not find version for attachment %s" file-name)))
     
-    ;; create result buffer if necessary
-    (if (not result-buffer)
-        (setq result-buffer (get-buffer-create 
-                             (cf-format-attachment-buffer-name 
-                              file-name page-name space-name))))
-
     ;; prep result buffer
     (with-current-buffer result-buffer
       (widen)
       (erase-buffer)
       (kill-all-local-variables)
       ;; save load-info so we can revert the buffer using our custom
-      ;; revert-buffer-function
-      (setq confluence-load-info 
-            (list 'attachment (cf-get-url) page-id space-name page-name
-                  file-name))
+      ;; revert-buffer-function and push/pop
+      (setq confluence-load-info load-info)
       (make-local-variable 'revert-buffer-function)
       (setq revert-buffer-function 'cf-revert-page)
       (if (not buffer-file-name)
@@ -1165,29 +1184,17 @@ viewed."
 
     ;; just bailout if the download failed
     (if download-error
-        (progn
-          (if was-buffer-created
-              (kill-buffer result-buffer))
-          (error download-error)))
+        (error download-error))
 
-    (if save-only-file-name
-        ;; if we are not viewing the file, save the result buffer and then
-        ;; kill it
-        (progn
-          (with-current-buffer result-buffer
-            (let ((save-buffer-coding-system 'utf-8))
-              (basic-save-buffer)))
-          (if was-buffer-created
-              (kill-buffer result-buffer))
-          (setq result-buffer nil)
-          (message "File successfully downloaded to %s" save-only-file-name))
-      ;; otherwise, prep the buffer for viewing
-      (with-current-buffer result-buffer
+    (with-current-buffer result-buffer
+      (if save-only-file-name
+          ;; if we are not viewing the file, just save the result buffer
+          (let ((save-buffer-coding-system 'utf-8))
+            (basic-save-buffer))
+        ;; otherwise, prep the buffer for viewing
         (set-buffer-modified-p nil)
         (set-auto-mode)
-        (goto-char (point-min))))
-
-    result-buffer))
+        (goto-char (point-min))))))
 
 (defun cf-attachment-download-callback (result-buffer decode-coding-system)
   "Handles an attachment xml-rpc download result buffer.  Copies the
@@ -1513,14 +1520,6 @@ given STRUCT-VAR."
             (push (cons (match-string 1) t) current-completions)))))
   (cf-complete comp-str pred comp-flag current-completions))
 
-(defun cf-complete-attachment-name (comp-str pred comp-flag)
-  "Completion function for confluence attachments."
-  (if (not current-completions)
-      (with-current-buffer completion-buffer
-        (setq current-completions (cf-result-to-completion-list (cf-rpc-get-attachments
-                                                                 confluence-page-id) "fileName"))))
-  (cf-complete comp-str pred comp-flag current-completions))
-
 (defun cf-complete (comp-str pred comp-flag comp-table)
   "Executes completion for the given args and COMP-TABLE."
   (cond
@@ -1804,6 +1803,7 @@ set by `cf-rpc-execute-internal')."
     (define-key map "a" 'confluence-get-attachment)
     (define-key map "la" 'confluence-add-label)
     (define-key map "lr" 'confluence-remove-label)
+    (define-key map "lg" 'confluence-get-labels)
     map)
   "Keybinding prefix map which can be bound for common functions in confluence mode.")
 
@@ -1905,6 +1905,7 @@ bullets if DEPTH is negative (does nothing if DEPTH is 0)."
 ;;   - image support via create-image/insert-image or auto-image-file-mode
 ;;   - [$id] links?
 ;; - add more label support?
+;; - change page preview to use async like attachments (xml parsing issues)
 ;; - add more structured browsing?
 ;; - funky searches:
 ;;   - labelText:<label>

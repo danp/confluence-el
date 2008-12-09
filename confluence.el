@@ -469,6 +469,63 @@ PAGE-NAME and loads it into a new buffer."
         (confluence-input-url nil))
     (confluence-create-page)))
 
+(defun confluence-get-related-page (&optional rel-type arg)
+  "Gets a page related to the current page.  Prompts for type, one of
+(ancestor, child, descendent, attachment, parent)."
+  (interactive "i\nP")
+  (if (not rel-type)
+      (setq rel-type (intern
+                      (cf-read-string-simple
+                       (format "Confluence Relation Type [%s]: "
+                               (if arg "ancestor" "child")) 
+                       nil
+                       '(("attachment" t) ("ancestor" t) ("child" t)
+                         ("parent" t) ("descendent" t)) 
+                       t nil
+                       (if arg "ancestor" "child")))))
+  (let ((space-name (cf-get-struct-value confluence-page-struct "space"))
+        (page-name (cf-get-struct-value confluence-page-struct "title"))
+        (page-id confluence-page-id)
+        (rel-page-names nil))
+    (if (and (cf-string-notempty space-name)
+             (cf-string-notempty page-name)
+             page-id)
+        (cond
+         ;; show page attachment
+         ((eq rel-type 'attachment)
+          (confluence-get-attachment page-name space-name nil page-id))
+         ;; show page parent
+         ((eq rel-type 'parent)
+          (confluence-get-parent-page))
+         (t
+          (setq rel-page-names
+                (with-quiet-rpc
+                 (cf-result-to-completion-list
+                  (cond
+                   ;; retrieve available ancestors
+                   ((eq rel-type 'ancestor)
+                    (cf-rpc-get-page-ancestors page-id))
+                   ;; retrieve available children
+                   ((eq rel-type 'child)
+                    (cf-rpc-get-page-children page-id))
+                   ;; retrieve available descendents
+                   ((eq rel-type 'descendent)
+                    (cf-rpc-get-page-descendents page-id))
+                   (t 
+                    (error "Unknown relationship type %s" rel-type)))
+                  "title")))
+          (if (= (length rel-page-names) 0)
+              (message "Current page has no relations of type %s"
+                       rel-type)
+            ;; prompt for actual related page to load
+            (confluence-get-page
+             (cf-read-string nil
+                             "Confluence Page Name: "
+                             'confluence-page-history 
+                             (cons space-name (cf-get-url))
+                             rel-page-names t)
+             space-name)))))))
+
 (defmacro cf-destructure-tags-stack-entry (entry &rest body)
   "Destructure a tags-stack tuple.  NB this is not a hygenic
 macro, it intentionally binds named variables that match the
@@ -845,6 +902,18 @@ SPACE-NAME."
 (defun cf-rpc-get-attachments (page-id)
   "Executes a confluence 'getAttachments' rpc call with page id."
   (cf-rpc-execute 'confluence1.getAttachments page-id))
+
+(defun cf-rpc-get-page-children (page-id)
+  "Executes a confluence 'getChildren' rpc call with page id."
+  (cf-rpc-execute 'confluence1.getChildren page-id))
+
+(defun cf-rpc-get-page-ancestors (page-id)
+  "Executes a confluence 'getAncestors' rpc call with page id."
+  (cf-rpc-execute 'confluence1.getAncestors page-id))
+
+(defun cf-rpc-get-page-descendents (page-id)
+  "Executes a confluence 'getDescendents' rpc call with page id."
+  (cf-rpc-execute 'confluence1.getDescendents page-id))
 
 (defun cf-ediff-current-page (update-cur-version)
   "Starts an ediff session for the current confluence page, optionally
@@ -1883,6 +1952,7 @@ set by `cf-rpc-execute-internal')."
     (define-key map "*" 'confluence-pop-tag-stack)
     (define-key map "v" 'confluence-preview)
     (define-key map "a" 'confluence-get-attachment)
+    (define-key map "x" 'confluence-get-related-page)
     (define-key map "la" 'confluence-add-label)
     (define-key map "lr" 'confluence-remove-label)
     (define-key map "lg" 'confluence-get-labels)
@@ -1982,8 +2052,6 @@ bullets if DEPTH is negative (does nothing if DEPTH is 0)."
 ;; TODO 
 ;; - add "backup" support (save to restore from local file)?
 ;; - extended link support
-;;   - attachement support (getAttachments for page)
-;;     - list attachments page (like search page)
 ;;   - [$id] links?
 ;; - add more label support?
 ;; - change page preview to use async like attachments (xml parsing issues)

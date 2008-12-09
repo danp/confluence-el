@@ -155,6 +155,7 @@
 (require 'ediff)
 (require 'thingatpt)
 (require 'browse-url)
+(require 'image-file)
 
 (defmacro confluence-coding-system-base (coding-system)
   "Safely returns the base of the given CODING-SYSTEM (or the given value if not found)."
@@ -214,6 +215,12 @@ you are working with an older system, you will need to configure the coding syst
 configured here)."
   :group 'confluence
   :type '(alist  :key-type string :value-type coding-system))
+
+(defcustom confluence-show-attachment-images window-system
+  "If not nil, attachments which are images will be displayed as such (if
+possible), otherwise images will be treated the same as other attachments."
+  :group 'confluence
+  :type 'boolean)
 
 (defvar confluence-coding-prefix-alist (list (cons (confluence-coding-system-base 'utf-16-be) "\376\377")
                                              (cons (confluence-coding-system-base 'utf-16-le) "\377\376"))
@@ -1122,8 +1129,10 @@ attachment and loading the data if necessary."
 (defun cf-insert-attachment (page-name space-name file-name page-id 
                              result-buffer save-only-file-name load-info)
   "Downloads and inserts the attachment with the given info into the given
-RESULT-BUFFER for viewing.  If SAVE-ONLY-FILE-NAME is non-nil, the attachment
-will instead be saved to this file name and not viewed."
+RESULT-BUFFER for viewing.  If the image is a supported image type and
+`confluence-show-attachment-images' is enabled, the data will be viewed as an
+image.  If SAVE-ONLY-FILE-NAME is non-nil, the attachment will instead be
+saved to this file name and not viewed."
   ;; we use lexical-let so the lambda form below can easily interact with the
   ;; variables defined here
   (lexical-let ((retrieval-done nil)
@@ -1196,8 +1205,67 @@ will instead be saved to this file name and not viewed."
                 (file-coding-system-alist nil))
             (write-region (point-min) (point-max) buffer-file-name nil 'quiet))
         ;; otherwise, prep the buffer for viewing
-        (set-auto-mode)
+        (if (or (not confluence-show-attachment-images)
+                (not (cf-insert-image file-name)))
+          (set-auto-mode))
+        (set-buffer-modified-p nil)
         (goto-char (point-min))))))
+
+(defun cf-insert-image (attachment-file-name)
+  "Determines if the attachment data in the current buffer with
+ATTACHMENT-FILE-NAME is supported image data and, if so, displays the image
+data.  Returns t if the data was successfully displayed as an image, nil
+otherwise."
+  (let ((buf-is-multibyte enable-multibyte-characters))
+    (if (not
+         (catch 'inserted-image
+           ;; don't even bother if the file name does not match supported
+           ;; image types
+           (if (not (string-match (image-file-name-regexp) 
+                                  attachment-file-name))
+               (throw 'inserted-image nil))
+           ;; switch buffer to "binary" mode and grab image data
+           (set-buffer-multibyte nil)
+           (let ((img-data (string-make-unibyte
+                            (buffer-substring-no-properties 
+                             (point-min) (point-max))))
+                 (img-type nil)
+                 (image nil))
+             ;; attempt to determine image type
+             (setq img-type (image-type-from-data img-data))
+             (if (not img-type)
+                 (progn
+                   (setq img-type (file-name-extension attachment-file-name))
+                   (if (cf-string-notempty img-type)
+                       (setq img-type (intern img-type))
+                     (setq img-type nil))))
+             (if (not img-type)
+                 (throw 'inserted-image nil))
+             ;; attempt to create image data
+             (setq image (create-image img-data img-type t))
+             (if (not image)
+                 (throw 'inserted-image nil))
+             ;; insert the image data, this logic borrowed from
+             ;; insert-image-file
+             (add-text-properties 
+              (point-min) (point-max)
+              `(display ,image
+                        intangible ,image
+                        rear-nonsticky (display intangible)
+                        read-only t
+                        front-sticky (read-only)))
+             ;; indicate the buffer contents are "binary"
+             (setq buffer-file-coding-system 'no-conversion)
+             (make-local-variable 'find-file-literally)
+             (setq find-file-literally t)
+             (buffer-disable-undo))
+           t))
+        (progn
+          ;; restore previous buffer state
+          (set-buffer-multibyte buf-is-multibyte)
+          (message "Unsupported image type %s" attachment-file-name)
+          nil)
+      t)))
 
 (defun cf-attachment-download-callback (result-buffer decode-coding-system)
   "Handles an attachment xml-rpc download result buffer.  Copies the
@@ -1916,7 +1984,6 @@ bullets if DEPTH is negative (does nothing if DEPTH is 0)."
 ;; - extended link support
 ;;   - attachement support (getAttachments for page)
 ;;     - list attachments page (like search page)
-;;   - image support via create-image/insert-image or auto-image-file-mode
 ;;   - [$id] links?
 ;; - add more label support?
 ;; - change page preview to use async like attachments (xml parsing issues)

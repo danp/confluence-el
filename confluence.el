@@ -418,7 +418,7 @@ buffer for viewing or downloading it to a local file."
       (let ((save-only-file-name nil))
         ;; determine if caller wants to view the file or merely download it
         (if (equal "d"
-                   (cf-read-string-simple "View confluence attachment (v) or download only (d) [v]: " nil '(("v" . t) ("d" . t)) t nil "v"))
+                   (cf-read-char "(v)iew confluence attachment or (d)ownload only [v]: " "[vd]" "v"))
             (setq save-only-file-name (expand-file-name 
                                        (read-file-name "Download file name: " 
                                                        nil file-name))))
@@ -959,7 +959,8 @@ page."
   (if (and confluence-load-info
            (or noconfirm
                (yes-or-no-p "Revert confluence page? ")))
-      (let ((confluence-no-push t))
+      (let ((confluence-no-push t)
+            (inhibit-read-only t))
         ;; use the load-info to reload the page, so we can reload normal pages
         ;; and search pages
         (cf-destructure-load-info confluence-load-info
@@ -977,8 +978,8 @@ page."
            ((eq page-type 'attachment)
             (if (or (not (file-exists-p buffer-file-name))
                     (equal "d"
-                           (cf-read-string-simple "Revert attachment from Confluence download (d) or local file (f) [d]: " 
-                            nil '(("d" . t) ("f" . t)) t nil "d")))
+                           (cf-read-char "Revert attachment from Confluence (d)ownload or local (f)ile [d]: " 
+                            "[df]" "d")))
                 (cf-insert-attachment page-name space-name file-name 
                                       page-id-or-query (current-buffer) nil
                                       confluence-load-info)
@@ -1306,7 +1307,7 @@ otherwise."
                  (progn
                    (setq img-type (file-name-extension attachment-file-name))
                    (if (cf-string-notempty img-type)
-                       (setq img-type (intern img-type))
+                       (setq img-type (intern (downcase img-type)))
                      (setq img-type nil))))
              (if (not img-type)
                  (throw 'inserted-image nil))
@@ -1528,9 +1529,25 @@ specified as one path).  Suitable for use with `confluence-prompt-page-function'
                                (current-buffer)))
         (confluence-completing-read t))
     (with-quiet-rpc
-     (completing-read prompt comp-func-or-table
-                      nil require-match init-val hist-list-var def-val t))))
+     ;; prefer ido-completing-read if available
+     (if (and (fboundp 'ido-completing-read)
+              (listp comp-func-or-table))
+         (ido-completing-read prompt (mapcar 'car comp-func-or-table) nil require-match init-val hist-list-var def-val)
+       (completing-read prompt comp-func-or-table
+                        nil require-match init-val hist-list-var def-val t)))))
 
+(defun cf-read-char (prompt allowed-chars-regex &optional def-char)
+  "Prompt for a character using the given PROMPT and ALLOWED-CHARS-REGEX.
+If DEF-CHAR is given it will be returned if user hits the <enter> key."
+  (let ((the-char nil))
+    (while (not the-char)
+      (setq the-char (char-to-string (read-char-exclusive prompt)))
+      (if (not (string-match allowed-chars-regex the-char))
+          (if (and def-char (string-equal (char-to-string ?\r) the-char))
+              (setq the-char def-char)
+            (setq the-char nil))))
+    the-char))
+  
 (defun cf-minibuffer-setup ()
   "Minibuffer setup hook which changes some keybindings for confluence completion."
   (if confluence-completing-read

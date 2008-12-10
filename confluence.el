@@ -303,7 +303,15 @@ for most coding systems.")
   "Execute the forms in BODY with `url-show-status' set to nil."
   `(let ((url-show-status nil))
      ,@body))
-  
+
+(defun confluence-config (key)
+  "Returns the contents of ~/.cofluence.<key>."
+  (let ((strip (lambda (string)
+                 (if (> (length string) 0)
+                     (substring string 0 (- (length string) 1))))))
+  (funcall strip (shell-command-to-string
+                  (concat "cat ~/.confluence." key)))))
+
 (defun confluence-login (&optional arg)
   "Logs into the current confluence url, if necessary.  With ARG, forces
 re-login to the current url."
@@ -321,8 +329,8 @@ re-login to the current url."
             (setq cur-token
                   (cf-rpc-execute-internal 
                    'confluence1.login
-                   (read-string (format "Confluence Username [%s]: " user-login-name) nil nil user-login-name t)
-                   (read-passwd "Confluence Password: ")))
+                   (confluence-config "username")
+                   (confluence-config "password")))
             (cf-set-struct-value 'confluence-login-token-alist
                                  (cf-get-url) cur-token))
         (error (message "Failed logging in: %s" (error-message-string err)))))
